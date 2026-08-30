@@ -96,7 +96,7 @@ async function handleCheckoutCompleted(session) {
     await updateRow(existing.rowNumber, rowData);
     console.log(`Updated sheet row ${existing.rowNumber} for ${email}`);
   } else {
-    await appendRow(rowData);
+        await appendRow({ ...rowData, discordJoined: 'No', skoolInvited: 'No' });
     console.log(`Added new sheet row for ${email}`);
   }
 
