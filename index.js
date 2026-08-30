@@ -14,6 +14,8 @@ const { generateWeeklyReport } = require('./jobs/weeklyReport');
 const { runWeeklyAudit } = require('./jobs/weeklyAudit');
 const { runWeeklyBackup } = require('./jobs/weeklyBackup');
 const { checkWebhookHealth } = require('./jobs/checkWebhookHealth');
+const { checkLeads } = require('./jobs/checkLeads');
+const { generateWeeklyLeadsReport } = require('./jobs/weeklyLeadsReport');
 const { ensureHeaderRow } = require('./lib/sheets');
 const { startDiscordGateway } = require('./lib/discordGateway');
 const { testEmailHandler } = require('./routes/testEmail');
@@ -145,5 +147,20 @@ async function main() {
   console.log(`Weekly audit scheduled for Mondays at ${hour}:00 UTC.`);
   console.log(`Weekly backup scheduled for Mondays at ${hour}:00 UTC.`);
   console.log(`Weekly webhook health check scheduled for Mondays at ${hour}:00 UTC.`);
+
+  // Leads sheet: check frequently (every 15 minutes) for auto-reply and
+  // nurture emails, so leads get a prompt response.
+  cron.schedule('*/15 * * * *', () => {
+    checkLeads().catch((err) => console.error('Scheduled leads check failed:', err));
+  });
+  console.log('Leads check scheduled every 15 minutes.');
+
+  // Weekly leads report — bundled with the other Monday jobs.
+  cron.schedule(weeklyCronExpression, () => {
+    generateWeeklyLeadsReport().catch((err) =>
+      console.error('Scheduled weekly leads report failed:', err)
+    );
+  });
+  console.log(`Weekly leads report scheduled for Mondays at ${hour}:00 UTC.`);
 }
 main();
