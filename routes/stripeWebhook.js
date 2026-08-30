@@ -73,6 +73,12 @@ async function handleCheckoutCompleted(session) {
       if (discordUserId) {
         await addRoleToUser(discordUserId);
         console.log(`Role added to ${discordUsername} (${discordUserId})`);
+
+        // Yearly subscribers also get the VIP role, as a recognition badge.
+        if (planLabel.includes('Yearly') && process.env.DISCORD_VIP_ROLE_ID) {
+          await addRoleToUser(discordUserId, process.env.DISCORD_VIP_ROLE_ID);
+          console.log(`VIP role added to ${discordUsername} (yearly plan)`);
+        }
       } else {
         console.error(`Could not find Discord member for username: ${discordUsername}`);
       }
@@ -163,6 +169,12 @@ async function handleSubscriptionDeleted(subscription) {
       if (member?.user?.id) {
         await removeRoleFromUser(member.user.id);
         console.log(`Removed role from ${row.discordUsername} (immediate cancellation)`);
+
+        // Also remove the VIP role in case they had it (yearly plan) —
+        // harmless no-op if they never had it.
+        if (process.env.DISCORD_VIP_ROLE_ID) {
+          await removeRoleFromUser(member.user.id, process.env.DISCORD_VIP_ROLE_ID);
+        }
       }
     }
   } catch (err) {
