@@ -1,13 +1,14 @@
 // index.js
 // Entry point. Starts the web server (for the Stripe webhook) and schedules
-// the daily jobs (expiration check, milestone check) and the weekly jobs
-// (business summary report, consistency audit).
+// the daily jobs (expiration check, milestone check, win-back check) and
+// the weekly jobs (business summary report, consistency audit).
 require('dotenv').config();
 const express = require('express');
 const cron = require('node-cron');
 const { stripeWebhookHandler } = require('./routes/stripeWebhook');
 const { checkExpiredSubscriptions } = require('./jobs/checkExpiredSubscriptions');
 const { checkMilestones } = require('./jobs/checkMilestones');
+const { checkWinBack } = require('./jobs/checkWinBack');
 const { generateWeeklyReport } = require('./jobs/weeklyReport');
 const { runWeeklyAudit } = require('./jobs/weeklyAudit');
 const { ensureHeaderRow } = require('./lib/sheets');
@@ -83,7 +84,8 @@ async function main() {
   app.listen(port, () => {
     console.log(`Server listening on port ${port}`);
   });
-  // Schedule the daily cancellation check and milestone check together.
+  // Schedule the daily jobs together: expiration check, milestone check,
+  // and win-back check.
   const hour = Number(process.env.DAILY_CHECK_HOUR || 9);
   const cronExpression = `0 ${hour} * * *`; // e.g. "0 9 * * *" = every day at 09:00 UTC
   cron.schedule(cronExpression, () => {
@@ -93,9 +95,13 @@ async function main() {
     checkMilestones().catch((err) =>
       console.error('Scheduled milestone check failed:', err)
     );
+    checkWinBack().catch((err) =>
+      console.error('Scheduled win-back check failed:', err)
+    );
   });
   console.log(`Daily expiration check scheduled for ${hour}:00 UTC.`);
   console.log(`Daily milestone check scheduled for ${hour}:00 UTC.`);
+  console.log(`Daily win-back check scheduled for ${hour}:00 UTC.`);
 
   // Schedule the weekly business summary and consistency audit — every
   // Monday at the same hour.
