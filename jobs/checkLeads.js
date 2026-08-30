@@ -13,7 +13,8 @@
 
 const { ensureTrackingColumns, getAllLeads, markLeadField, getColumnLetter } = require('../lib/leads');
 const { findRowByEmail } = require('../lib/sheets');
-const { sendLeadAutoReply, sendLeadNurtureEmail, sendDuplicatePhoneAlert } = require('../lib/email');
+const { sendLeadAutoReply, sendLeadNurtureEmail, sendDuplicatePhoneAlert, sendSpamLeadsAlert } = require('../lib/email');
+const { evaluateLead } = require('../lib/spam');
 
 const NURTURE_AFTER_DAYS = 4;
 
@@ -63,17 +64,38 @@ async function checkLeads() {
     return;
   }
 
-  const { autoReplyCol, nurtureCol } = await ensureTrackingColumns();
+  const { autoReplyCol, nurtureCol, spamCol } = await ensureTrackingColumns();
   const phoneCol = await getColumnLetter('Τηλέφωνο');
   const leads = await getAllLeads();
 
   let autoReplyCount = 0;
   let nurtureCount = 0;
+  const newlyFlaggedSpam = [];
 
   for (const lead of leads) {
     if (!lead.email) continue;
 
+    // Already flagged as spam in a previous run — skip entirely (no
+    // auto-reply, no nurture, no re-checking). Admin can clear the "Spam
+    // Flagged" cell manually if it was a false positive.
+    if (lead.spamFlagged) continue;
+
     const isNewLead = lead.autoReplySent !== 'Yes';
+
+    // --- Spam/fake-lead check (only for newly-seen leads, before any
+    // email goes out) ---
+    if (isNewLead) {
+      const verdict = evaluateLead(lead, leads);
+      if (verdict.spam) {
+        try {
+          await markLeadField(lead.rowNumber, spamCol, verdict.reason);
+          newlyFlaggedSpam.push({ email: lead.email, phone: lead.phone, reason: verdict.reason });
+        } catch (err) {
+          console.error(`Failed to flag spam for row ${lead.rowNumber}:`, err.message);
+        }
+        continue; // skip auto-reply/nurture/duplicate-phone check for this lead
+      }
+    }
 
     // --- Phone normalization + duplicate check (only for newly-seen leads) ---
     if (isNewLead && lead.phone) {
@@ -140,6 +162,15 @@ async function checkLeads() {
 
   if (autoReplyCount > 0 || nurtureCount > 0) {
     console.log(`Leads check complete. Sent ${autoReplyCount} auto-repl(y/ies), ${nurtureCount} nurture email(s).`);
+  }
+
+  if (newlyFlaggedSpam.length > 0) {
+    console.log(`Flagged ${newlyFlaggedSpam.length} lead(s) as spam this run.`);
+    try {
+      await sendSpamLeadsAlert(newlyFlaggedSpam);
+    } catch (err) {
+      console.error('Failed to send spam leads alert:', err.message);
+    }
   }
 }
 
