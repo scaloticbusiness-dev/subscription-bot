@@ -1,11 +1,13 @@
 // index.js
 // Entry point. Starts the web server (for the Stripe webhook) and schedules
-// the daily job that removes the Discord role from expired subscriptions.
+// the daily jobs that remove the Discord role from expired subscriptions
+// and send loyalty milestone emails.
 require('dotenv').config();
 const express = require('express');
 const cron = require('node-cron');
 const { stripeWebhookHandler } = require('./routes/stripeWebhook');
 const { checkExpiredSubscriptions } = require('./jobs/checkExpiredSubscriptions');
+const { checkMilestones } = require('./jobs/checkMilestones');
 const { ensureHeaderRow } = require('./lib/sheets');
 const { startDiscordGateway } = require('./lib/discordGateway');
 const { testEmailHandler } = require('./routes/testEmail');
@@ -79,14 +81,18 @@ async function main() {
   app.listen(port, () => {
     console.log(`Server listening on port ${port}`);
   });
-  // Schedule the daily cancellation check.
+  // Schedule the daily cancellation check and milestone check together.
   const hour = Number(process.env.DAILY_CHECK_HOUR || 9);
   const cronExpression = `0 ${hour} * * *`; // e.g. "0 9 * * *" = every day at 09:00 UTC
   cron.schedule(cronExpression, () => {
     checkExpiredSubscriptions().catch((err) =>
       console.error('Scheduled expiration check failed:', err)
     );
+    checkMilestones().catch((err) =>
+      console.error('Scheduled milestone check failed:', err)
+    );
   });
   console.log(`Daily expiration check scheduled for ${hour}:00 UTC.`);
+  console.log(`Daily milestone check scheduled for ${hour}:00 UTC.`);
 }
 main();
