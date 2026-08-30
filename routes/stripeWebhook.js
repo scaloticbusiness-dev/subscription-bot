@@ -219,7 +219,10 @@ async function handleSubscriptionDeleted(subscription) {
     console.error('Discord role removal failed on cancellation:', err.message);
   }
 
-  await updateRow(row.rowNumber, { status: 'Expired' });
+  await updateRow(row.rowNumber, {
+    status: 'Expired',
+    expiredDate: new Date().toISOString().slice(0, 10),
+  });
   console.log(`Marked row ${row.rowNumber} (${email}) as Expired (immediate cancellation)`);
 
   try {
