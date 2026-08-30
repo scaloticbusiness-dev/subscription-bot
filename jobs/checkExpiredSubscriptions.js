@@ -52,4 +52,4 @@ async function checkExpiredSubscriptions() {
   console.log('Daily expiration check complete.');
 }
 
-module.exports = { checkExpiredSubscriptions };
+module.exports = { checkExpiredSubscriptions, isExpired };

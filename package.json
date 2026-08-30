@@ -8,11 +8,12 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "discord.js": "^14.27.0",
+    "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "stripe": "^16.9.0",
     "googleapis": "^144.0.0",
     "node-cron": "^3.0.3",
-    "dotenv": "^16.4.5"
+    "stripe": "^16.9.0"
   },
   "engines": {
     "node": ">=18.0.0"

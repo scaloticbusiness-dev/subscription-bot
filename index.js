@@ -9,6 +9,7 @@ const cron = require('node-cron');
 const { stripeWebhookHandler } = require('./routes/stripeWebhook');
 const { checkExpiredSubscriptions } = require('./jobs/checkExpiredSubscriptions');
 const { ensureHeaderRow } = require('./lib/sheets');
+const { startDiscordGateway } = require('./lib/discordGateway');
 
 const REQUIRED_ENV_VARS = [
   'STRIPE_SECRET_KEY',
@@ -18,6 +19,7 @@ const REQUIRED_ENV_VARS = [
   'DISCORD_ROLE_ID',
   'GOOGLE_SERVICE_ACCOUNT_JSON',
   'GOOGLE_SHEET_ID',
+  'WELCOME_CHANNEL_ID',
 ];
 
 function checkEnv() {
@@ -69,6 +71,12 @@ async function main() {
     await ensureHeaderRow();
   } catch (err) {
     console.error('Could not verify/set the sheet header row on startup:', err.message);
+  }
+
+  try {
+    await startDiscordGateway();
+  } catch (err) {
+    console.error('Could not start Discord gateway connection:', err.message);
   }
 
   const port = process.env.PORT || 3000;

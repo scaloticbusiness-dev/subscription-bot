@@ -9,17 +9,7 @@
 
 ## 1. Πριν το deployment — ρύθμιση στο Stripe
 
-Το πρόγραμμα διαβάζει το **Discord Username** του πελάτη από ένα custom field στο Checkout/Payment Link σου. Πρέπει να το προσθέσεις:
-
-1. Stripe Dashboard → **Payment Links** → άνοιξε το κάθε link σου (Monthly & Yearly) → **Edit**
-2. Στην ενότητα **"Collect additional information"**, πρόσθεσε ένα **custom field**:
-   - Label: `Discord Username`
-   - **Key: `discord_username`** (πρέπει να είναι ακριβώς αυτό, μικρά γράμματα, με κάτω παύλα)
-   - Type: Text
-   - Required: Yes
-3. Αποθήκευσε και επανάλαβε για το δεύτερο Payment Link
-
-Χωρίς αυτό, το πρόγραμμα δεν θα ξέρει σε ποιον να δώσει τον ρόλο στο Discord.
+✅ **Έλεγχος: ήδη σωστά ρυθμισμένο!** Τα δύο υπάρχοντα Payment Links σου (Monthly: `buy.stripe.com/cNi4gAff6amc2Eq2Fo1VK01`, Yearly: `buy.stripe.com/3cI6oI6IA2TKcf00xg1VK02`) έχουν ήδη ένα υποχρεωτικό custom field **"Discord Username"** (key: `discordusername`). Ο κώδικας διαβάζει ακριβώς αυτό το πεδίο — δεν χρειάζεται καμία αλλαγή στο Stripe. Προχώρα κατευθείαν στο Βήμα 2.
 
 ---
 
