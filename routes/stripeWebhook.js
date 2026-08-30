@@ -12,9 +12,9 @@
 
 const Stripe = require('stripe');
 const { findMemberByUsername, addRoleToUser, removeRoleFromUser } = require('../lib/discord');
-const { findRowByEmail, appendRow, updateRow } = require('../lib/sheets');
+const { findRowByEmail, findRowByDiscordUsername, appendRow, updateRow } = require('../lib/sheets');
 const { calculateRenewalDate } = require('../lib/renewal');
-const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert, sendPaymentFailedEmail, sendGoodbyeEmail } = require('../lib/email');
+const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert, sendPaymentFailedEmail, sendGoodbyeEmail, sendDuplicateSignupAlert } = require('../lib/email');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -63,6 +63,44 @@ async function handleCheckoutCompleted(session) {
   const { planLabel } = await getPlanIntervalLabel(session);
   const today = new Date().toISOString().slice(0, 10);
   const renewalDate = calculateRenewalDate(today, planLabel);
+
+  // Check for signs of a duplicate/suspicious signup before doing anything
+  // else. This never blocks the actual role/sheet/email flow below — it
+  // just alerts the admin so they can take a look.
+  try {
+    const duplicateIssues = [];
+
+    const existingByEmail = await findRowByEmail(email);
+    if (existingByEmail && existingByEmail.status.toLowerCase() === 'active') {
+      duplicateIssues.push(
+        `❗ Αυτό το email έχει ήδη μια Active συνδρομή στο sheet (γραμμή ${existingByEmail.rowNumber}) — νέα πληρωμή μπορεί να είναι διπλή χρέωση.`
+      );
+    }
+
+    if (discordUsername) {
+      const existingByUsername = await findRowByDiscordUsername(discordUsername);
+      if (
+        existingByUsername &&
+        existingByUsername.email.toLowerCase() !== email.toLowerCase() &&
+        existingByUsername.status.toLowerCase() === 'active'
+      ) {
+        duplicateIssues.push(
+          `❗ Το Discord username "${discordUsername}" είναι ήδη συνδεδεμένο με άλλο ενεργό email (${existingByUsername.email}, γραμμή ${existingByUsername.rowNumber}).`
+        );
+      }
+    }
+
+    if (duplicateIssues.length > 0) {
+      await sendDuplicateSignupAlert({
+        issues: duplicateIssues,
+        name: session.customer_details?.name || '',
+        email,
+        discordUsername,
+      });
+    }
+  } catch (err) {
+    console.error('Duplicate signup check failed:', err.message);
+  }
 
   // Find the Discord member (to store their user ID, and to add the role)
   let discordUserId = null;
