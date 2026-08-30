@@ -14,7 +14,7 @@ const Stripe = require('stripe');
 const { findMemberByUsername, addRoleToUser, removeRoleFromUser } = require('../lib/discord');
 const { findRowByEmail, appendRow, updateRow } = require('../lib/sheets');
 const { calculateRenewalDate } = require('../lib/renewal');
-const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert } = require('../lib/email');
+const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert, sendPaymentFailedEmail } = require('../lib/email');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -180,6 +180,33 @@ async function handleSubscriptionDeleted(subscription) {
 }
 
 /**
+ * Handles a failed renewal payment. Only acts on `subscription_cycle`
+ * invoices (i.e. actual renewals) — the first invoice at signup is not a
+ * renewal, and if that one fails the customer simply retries checkout
+ * themselves, so no email is needed there.
+ */
+async function handleInvoicePaymentFailed(invoice) {
+  if (invoice.billing_reason !== 'subscription_cycle') {
+    return;
+  }
+
+  const email = invoice.customer_email;
+  if (!email) {
+    console.error('Failed invoice has no customer email, skipping.');
+    return;
+  }
+
+  const row = await findRowByEmail(email);
+  const name = row?.name || '';
+
+  try {
+    await sendPaymentFailedEmail({ name, email });
+  } catch (err) {
+    console.error('Failed to send payment failed email:', err.message);
+  }
+}
+
+/**
  * Express route handler. Must be mounted with express.raw({type: 'application/json'})
  * so the raw body is available for Stripe signature verification.
  */
@@ -203,6 +230,8 @@ async function stripeWebhookHandler(req, res) {
       await handleCheckoutCompleted(event.data.object);
     } else if (event.type === 'customer.subscription.deleted') {
       await handleSubscriptionDeleted(event.data.object);
+    } else if (event.type === 'invoice.payment_failed') {
+      await handleInvoicePaymentFailed(event.data.object);
     }
     // Other event types can be handled here later if needed.
 
