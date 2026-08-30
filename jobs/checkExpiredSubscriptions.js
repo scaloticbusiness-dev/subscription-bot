@@ -46,7 +46,10 @@ async function checkExpiredSubscriptions() {
           console.warn(`Could not find Discord member: ${row.discordUsername} (row ${row.rowNumber})`);
         }
       }
-      await updateRow(row.rowNumber, { status: 'Expired' });
+      await updateRow(row.rowNumber, {
+        status: 'Expired',
+        expiredDate: new Date().toISOString().slice(0, 10),
+      });
       console.log(`Marked row ${row.rowNumber} (${row.email}) as Expired`);
 
       processedForSkool.push({ name: row.name, email: row.email, plan: row.plan });
