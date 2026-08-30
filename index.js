@@ -64,6 +64,20 @@ async function main() {
     }
   });
 
+  // TEMPORARY: trigger the archive check manually for testing, optionally
+  // overriding the 90-day threshold via ?days=0 to force-archive Expired
+  // rows regardless of age. Remove this route once confirmed working.
+  app.get('/run-archive-check', async (req, res) => {
+    try {
+      const days = req.query.days !== undefined ? Number(req.query.days) : undefined;
+      await runArchiveCheck(days);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   // TEMPORARY: test the welcome email without a real Stripe payment.
   // Visit /test-email?to=your@email.com — remove this route once confirmed working.
   app.get('/test-email', testEmailHandler);
