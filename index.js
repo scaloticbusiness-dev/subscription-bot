@@ -1,13 +1,14 @@
 // index.js
 // Entry point. Starts the web server (for the Stripe webhook) and schedules
-// the daily jobs that remove the Discord role from expired subscriptions
-// and send loyalty milestone emails.
+// the daily jobs (expiration check, milestone check) and the weekly
+// business summary report.
 require('dotenv').config();
 const express = require('express');
 const cron = require('node-cron');
 const { stripeWebhookHandler } = require('./routes/stripeWebhook');
 const { checkExpiredSubscriptions } = require('./jobs/checkExpiredSubscriptions');
 const { checkMilestones } = require('./jobs/checkMilestones');
+const { generateWeeklyReport } = require('./jobs/weeklyReport');
 const { ensureHeaderRow } = require('./lib/sheets');
 const { startDiscordGateway } = require('./lib/discordGateway');
 const { testEmailHandler } = require('./routes/testEmail');
@@ -94,5 +95,14 @@ async function main() {
   });
   console.log(`Daily expiration check scheduled for ${hour}:00 UTC.`);
   console.log(`Daily milestone check scheduled for ${hour}:00 UTC.`);
+
+  // Schedule the weekly business summary — every Monday at the same hour.
+  const weeklyCronExpression = `0 ${hour} * * 1`; // Monday
+  cron.schedule(weeklyCronExpression, () => {
+    generateWeeklyReport().catch((err) =>
+      console.error('Scheduled weekly report failed:', err)
+    );
+  });
+  console.log(`Weekly report scheduled for Mondays at ${hour}:00 UTC.`);
 }
 main();
