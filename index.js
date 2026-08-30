@@ -9,6 +9,7 @@ const { stripeWebhookHandler } = require('./routes/stripeWebhook');
 const { checkExpiredSubscriptions } = require('./jobs/checkExpiredSubscriptions');
 const { checkMilestones } = require('./jobs/checkMilestones');
 const { checkWinBack } = require('./jobs/checkWinBack');
+const { runArchiveCheck } = require('./jobs/checkArchive');
 const { generateWeeklyReport } = require('./jobs/weeklyReport');
 const { runWeeklyAudit } = require('./jobs/weeklyAudit');
 const { ensureHeaderRow } = require('./lib/sheets');
@@ -98,10 +99,14 @@ async function main() {
     checkWinBack().catch((err) =>
       console.error('Scheduled win-back check failed:', err)
     );
+    runArchiveCheck().catch((err) =>
+      console.error('Scheduled archive check failed:', err)
+    );
   });
   console.log(`Daily expiration check scheduled for ${hour}:00 UTC.`);
   console.log(`Daily milestone check scheduled for ${hour}:00 UTC.`);
   console.log(`Daily win-back check scheduled for ${hour}:00 UTC.`);
+  console.log(`Daily archive check scheduled for ${hour}:00 UTC.`);
 
   // Schedule the weekly business summary and consistency audit — every
   // Monday at the same hour.
