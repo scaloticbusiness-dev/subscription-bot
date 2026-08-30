@@ -14,7 +14,7 @@ const Stripe = require('stripe');
 const { findMemberByUsername, addRoleToUser, removeRoleFromUser, sendChannelMessage } = require('../lib/discord');
 const { findRowByEmail, findRowByDiscordUsername, appendRow, updateRow } = require('../lib/sheets');
 const { calculateRenewalDate } = require('../lib/renewal');
-const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert, sendPaymentFailedEmail, sendGoodbyeEmail, sendDuplicateSignupAlert } = require('../lib/email');
+const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert, sendPaymentFailedEmail, sendGoodbyeEmail, sendDuplicateSignupAlert, sendRapidCycleAlert } = require('../lib/email');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -109,6 +109,47 @@ async function handleCheckoutCompleted(session) {
     }
   } catch (err) {
     console.error('Duplicate signup check failed:', err.message);
+  }
+
+  // Check for a rapid signup/cancel cycle: the same Stripe customer creating
+  // multiple subscriptions within a short window (e.g. sign up, cancel,
+  // sign up again, repeatedly). Never blocks the flow — just flags it.
+  try {
+    const customerId = session.customer;
+    if (customerId) {
+      const windowDays = 30;
+      const windowStart = Math.floor(Date.now() / 1000) - windowDays * 24 * 60 * 60;
+      const subs = await stripe.subscriptions.list({
+        customer: customerId,
+        status: 'all',
+        limit: 20,
+      });
+      const recentSubs = subs.data.filter((s) => s.created >= windowStart);
+
+      if (recentSubs.length >= 3) {
+        const alertName = session.customer_details?.name || '';
+        try {
+          await sendRapidCycleAlert({
+            name: alertName,
+            email,
+            subscriptionCount: recentSubs.length,
+            windowDays,
+          });
+        } catch (err) {
+          console.error('Failed to send rapid cycle email alert:', err.message);
+        }
+        try {
+          await sendChannelMessage(
+            process.env.ADMIN_ALERT_CHANNEL_ID,
+            `🔁 **Ύποπτος κύκλος εγγραφών/ακυρώσεων**\n${alertName || email} — ${email}\n${recentSubs.length} συνδρομές μέσα σε ${windowDays} μέρες.`
+          );
+        } catch (err) {
+          console.error('Failed to send admin Discord alert for rapid cycle:', err.message);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Rapid cycle check failed:', err.message);
   }
 
   // Find the Discord member (to store their user ID, and to add the role)
