@@ -16,6 +16,7 @@ const { runWeeklyBackup } = require('./jobs/weeklyBackup');
 const { checkWebhookHealth } = require('./jobs/checkWebhookHealth');
 const { checkLeads } = require('./jobs/checkLeads');
 const { generateWeeklyLeadsReport } = require('./jobs/weeklyLeadsReport');
+const { sendLaunchAnnouncementToAllLeads } = require('./jobs/sendLaunchAnnouncement');
 const { ensureHeaderRow } = require('./lib/sheets');
 const { startDiscordGateway } = require('./lib/discordGateway');
 const { testEmailHandler } = require('./routes/testEmail');
@@ -88,6 +89,21 @@ async function main() {
 
   // One-click confirmation link sent inside the Skool invite reminder email.
   app.get('/mark-skool-invited', markSkoolInvitedHandler);
+
+  // MANUAL TRIGGER ONLY — call this yourself once the course/Skool
+  // community is actually live. Sends the launch announcement to every
+  // lead who hasn't received it yet. Safe to call more than once (e.g. if
+  // new leads came in after the first send) — it only emails whoever is
+  // still unmarked.
+  app.get('/send-launch-announcement', async (req, res) => {
+    try {
+      const sent = await sendLaunchAnnouncementToAllLeads();
+      res.json({ ok: true, sent });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
 
   try {
     await ensureHeaderRow();
