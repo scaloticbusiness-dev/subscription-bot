@@ -14,7 +14,7 @@ const Stripe = require('stripe');
 const { findMemberByUsername, addRoleToUser, removeRoleFromUser } = require('../lib/discord');
 const { findRowByEmail, appendRow, updateRow } = require('../lib/sheets');
 const { calculateRenewalDate } = require('../lib/renewal');
-const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert, sendPaymentFailedEmail } = require('../lib/email');
+const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert, sendPaymentFailedEmail, sendGoodbyeEmail } = require('../lib/email');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -176,6 +176,12 @@ async function handleSubscriptionDeleted(subscription) {
     await sendSkoolRemovalAlert([{ name: row.name, email, plan: row.plan }]);
   } catch (err) {
     console.error('Failed to send Skool removal alert on cancellation:', err.message);
+  }
+
+  try {
+    await sendGoodbyeEmail({ name: row.name, email });
+  } catch (err) {
+    console.error('Failed to send goodbye email on cancellation:', err.message);
   }
 }
 
