@@ -10,6 +10,7 @@ const { stripeWebhookHandler } = require('./routes/stripeWebhook');
 const { checkExpiredSubscriptions } = require('./jobs/checkExpiredSubscriptions');
 const { ensureHeaderRow } = require('./lib/sheets');
 const { startDiscordGateway } = require('./lib/discordGateway');
+const { testEmailHandler } = require('./routes/testEmail');
 
 const REQUIRED_ENV_VARS = [
   'STRIPE_SECRET_KEY',
@@ -66,7 +67,13 @@ async function main() {
       res.status(500).json({ ok: false, error: err.message });
     }
   });
+    
 
+    // TEMPORARY: test the welcome email without a real Stripe payment.
+    // Visit /test-email?to=your@email.com — remove this route once confirmed working.
+    app.get('/test-email', testEmailHandler);
+
+    
   try {
     await ensureHeaderRow();
   } catch (err) {
