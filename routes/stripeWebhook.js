@@ -4,11 +4,13 @@
 //   2. Calculates the renewal date
 //   3. Writes/updates the row in Google Sheets
 //   4. Gives the Discord role to the customer
+//   5. Sends the customer a welcome email with the Discord invite link
 
 const Stripe = require('stripe');
 const { findMemberByUsername, addRoleToUser } = require('../lib/discord');
 const { findRowByEmail, appendRow, updateRow } = require('../lib/sheets');
 const { calculateRenewalDate } = require('../lib/renewal');
+const { sendWelcomeEmail } = require('../lib/email');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -95,6 +97,15 @@ async function handleCheckoutCompleted(session) {
   } else {
     await appendRow(rowData);
     console.log(`Added new sheet row for ${email}`);
+  }
+
+  // Send the welcome email with the Discord invite link. This never throws
+  // out of the main flow — a failed/misconfigured email should not stop the
+  // role assignment or sheet update above.
+  try {
+    await sendWelcomeEmail(email);
+  } catch (err) {
+    console.error('Failed to send welcome email:', err.message);
   }
 }
 
