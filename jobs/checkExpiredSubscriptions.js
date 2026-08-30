@@ -2,7 +2,7 @@
 // Runs once a day. Finds every row where:
 //   - Status is "Active"
 //   - Renewal Date is today or in the past
-// and, for each one: removes the Discord role and marks Status as "Expired".
+// and, for each one: removes the Discord role(s) and marks Status as "Expired".
 // Afterwards, sends the admin one summary email listing everyone who expired
 // today, so they can be manually removed from Skool (no public API for that).
 const { getAllRows, updateRow } = require('../lib/sheets');
@@ -36,6 +36,12 @@ async function checkExpiredSubscriptions() {
         if (member?.user?.id) {
           await removeRoleFromUser(member.user.id);
           console.log(`Removed role from ${row.discordUsername}`);
+
+          // Also remove the VIP role in case they had it (yearly plan) —
+          // harmless no-op if they never had it.
+          if (process.env.DISCORD_VIP_ROLE_ID) {
+            await removeRoleFromUser(member.user.id, process.env.DISCORD_VIP_ROLE_ID);
+          }
         } else {
           console.warn(`Could not find Discord member: ${row.discordUsername} (row ${row.rowNumber})`);
         }
