@@ -11,7 +11,7 @@
 // scheduled check.
 
 const Stripe = require('stripe');
-const { findMemberByUsername, addRoleToUser, removeRoleFromUser } = require('../lib/discord');
+const { findMemberByUsername, addRoleToUser, removeRoleFromUser, sendChannelMessage } = require('../lib/discord');
 const { findRowByEmail, findRowByDiscordUsername, appendRow, updateRow } = require('../lib/sheets');
 const { calculateRenewalDate } = require('../lib/renewal');
 const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert, sendPaymentFailedEmail, sendGoodbyeEmail, sendDuplicateSignupAlert } = require('../lib/email');
@@ -97,6 +97,15 @@ async function handleCheckoutCompleted(session) {
         email,
         discordUsername,
       });
+
+      try {
+        await sendChannelMessage(
+          process.env.ADMIN_ALERT_CHANNEL_ID,
+          `⚠️ **Πιθανή διπλή εγγραφή**\n${session.customer_details?.name || email}\n${duplicateIssues.join('\n')}`
+        );
+      } catch (err) {
+        console.error('Failed to send admin Discord alert for duplicate signup:', err.message);
+      }
     }
   } catch (err) {
     console.error('Duplicate signup check failed:', err.message);
@@ -167,6 +176,17 @@ async function handleCheckoutCompleted(session) {
   } catch (err) {
     console.error('Failed to send Skool invite reminder:', err.message);
   }
+
+  // Also post to the private admin Discord channel for immediate visibility,
+  // in addition to the email alerts above.
+  try {
+    await sendChannelMessage(
+      process.env.ADMIN_ALERT_CHANNEL_ID,
+      `🟢 **Νέα συνδρομή**\n${rowData.name || '(no name)'} — ${email}\nPlan: ${planLabel}`
+    );
+  } catch (err) {
+    console.error('Failed to send admin Discord alert for new subscription:', err.message);
+  }
 }
 
 /**
@@ -235,6 +255,16 @@ async function handleSubscriptionDeleted(subscription) {
     await sendGoodbyeEmail({ name: row.name, email });
   } catch (err) {
     console.error('Failed to send goodbye email on cancellation:', err.message);
+  }
+
+  // Also post to the private admin Discord channel for immediate visibility.
+  try {
+    await sendChannelMessage(
+      process.env.ADMIN_ALERT_CHANNEL_ID,
+      `🔴 **Ακύρωση συνδρομής**\n${row.name || '(no name)'} — ${email}\nΟ Discord ρόλος αφαιρέθηκε.`
+    );
+  } catch (err) {
+    console.error('Failed to send admin Discord alert for cancellation:', err.message);
   }
 }
 
