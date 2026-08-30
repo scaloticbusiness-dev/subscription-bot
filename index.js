@@ -17,10 +17,14 @@ const { checkWebhookHealth } = require('./jobs/checkWebhookHealth');
 const { checkLeads } = require('./jobs/checkLeads');
 const { generateWeeklyLeadsReport } = require('./jobs/weeklyLeadsReport');
 const { sendLaunchAnnouncementToAllLeads } = require('./jobs/sendLaunchAnnouncement');
+const { generateMonthlyReport } = require('./jobs/monthlyReport');
+const { runCohortAnalysis } = require('./jobs/cohortAnalysis');
 const { ensureHeaderRow } = require('./lib/sheets');
 const { startDiscordGateway } = require('./lib/discordGateway');
 const { testEmailHandler } = require('./routes/testEmail');
 const { markSkoolInvitedHandler } = require('./routes/markSkoolInvited');
+const { gdprExportHandler } = require('./routes/gdprExport');
+const { customerLtvHandler } = require('./routes/customerLtv');
 const REQUIRED_ENV_VARS = [
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',
@@ -89,6 +93,38 @@ async function main() {
 
   // One-click confirmation link sent inside the Skool invite reminder email.
   app.get('/mark-skool-invited', markSkoolInvitedHandler);
+
+  // GDPR data export: everything held about one email, as a downloadable
+  // JSON file. Requires ?key=ADMIN_API_KEY.
+  app.get('/gdpr-export', gdprExportHandler);
+
+  // On-demand lifetime-value lookup for a single customer. Requires
+  // ?key=ADMIN_API_KEY.
+  app.get('/customer-ltv', customerLtvHandler);
+
+  // Manual trigger for the cohort retention analysis, useful for testing
+  // without waiting for the monthly schedule.
+  app.get('/run-cohort-analysis', async (req, res) => {
+    try {
+      const table = await runCohortAnalysis();
+      res.json({ ok: true, cohorts: table.length });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Manual trigger for the monthly report, useful for testing without
+  // waiting for the 1st of the month.
+  app.get('/run-monthly-report', async (req, res) => {
+    try {
+      await generateMonthlyReport();
+      res.json({ ok: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
 
   // MANUAL TRIGGER ONLY — call this yourself once the course/Skool
   // community is actually live. Sends the launch announcement to every
@@ -178,5 +214,19 @@ async function main() {
     );
   });
   console.log(`Weekly leads report scheduled for Mondays at ${hour}:00 UTC.`);
+
+  // Monthly business summary (MRR, churn, trends) + cohort retention
+  // analysis — run together on the 1st of each month, since both look at
+  // the full previous month rather than a rolling 7-day window.
+  const monthlyCronExpression = `0 ${hour} 1 * *`; // 1st of the month
+  cron.schedule(monthlyCronExpression, () => {
+    generateMonthlyReport().catch((err) =>
+      console.error('Scheduled monthly report failed:', err)
+    );
+    runCohortAnalysis().catch((err) =>
+      console.error('Scheduled cohort analysis failed:', err)
+    );
+  });
+  console.log(`Monthly report and cohort analysis scheduled for the 1st of each month at ${hour}:00 UTC.`);
 }
 main();
