@@ -6,12 +6,15 @@
 //   4. Gives the Discord role to the customer
 //   5. Sends the customer a welcome email with the Discord invite link
 //   6. Reminds the admin to manually send the Skool invite (no Skool API)
+// On an immediate cancellation, it removes the Discord role and marks the
+// sheet row as "Expired" right away, instead of waiting for the next day's
+// scheduled check.
 
 const Stripe = require('stripe');
-const { findMemberByUsername, addRoleToUser } = require('../lib/discord');
+const { findMemberByUsername, addRoleToUser, removeRoleFromUser } = require('../lib/discord');
 const { findRowByEmail, appendRow, updateRow } = require('../lib/sheets');
 const { calculateRenewalDate } = require('../lib/renewal');
-const { sendWelcomeEmail, sendSkoolInviteReminder } = require('../lib/email');
+const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert } = require('../lib/email');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -96,7 +99,7 @@ async function handleCheckoutCompleted(session) {
     await updateRow(existing.rowNumber, rowData);
     console.log(`Updated sheet row ${existing.rowNumber} for ${email}`);
   } else {
-        await appendRow({ ...rowData, discordJoined: 'No', skoolInvited: 'No' });
+    await appendRow({ ...rowData, discordJoined: 'No', skoolInvited: 'No' });
     console.log(`Added new sheet row for ${email}`);
   }
 
@@ -123,6 +126,60 @@ async function handleCheckoutCompleted(session) {
 }
 
 /**
+ * Handles an immediate subscription cancellation (as opposed to a natural
+ * expiration caught by the daily job). Removes the Discord role and marks
+ * the sheet row "Expired" right away, so the sheet reflects reality without
+ * waiting for tomorrow's scheduled check — and the row turns red immediately
+ * via the existing conditional formatting on the Status column.
+ */
+async function handleSubscriptionDeleted(subscription) {
+  const customerId = subscription.customer;
+  if (!customerId) {
+    console.error('Subscription deleted event has no customer id, skipping.');
+    return;
+  }
+
+  const customer = await stripe.customers.retrieve(customerId);
+  const email = customer?.email;
+  if (!email) {
+    console.error(`Could not find an email for customer ${customerId}, skipping.`);
+    return;
+  }
+
+  const row = await findRowByEmail(email);
+  if (!row) {
+    console.warn(`No sheet row found for cancelled customer ${email}.`);
+    return;
+  }
+
+  if (row.status.toLowerCase() !== 'active') {
+    console.log(`Row for ${email} is already ${row.status}, nothing to do.`);
+    return;
+  }
+
+  try {
+    if (row.discordUsername) {
+      const member = await findMemberByUsername(row.discordUsername);
+      if (member?.user?.id) {
+        await removeRoleFromUser(member.user.id);
+        console.log(`Removed role from ${row.discordUsername} (immediate cancellation)`);
+      }
+    }
+  } catch (err) {
+    console.error('Discord role removal failed on cancellation:', err.message);
+  }
+
+  await updateRow(row.rowNumber, { status: 'Expired' });
+  console.log(`Marked row ${row.rowNumber} (${email}) as Expired (immediate cancellation)`);
+
+  try {
+    await sendSkoolRemovalAlert([{ name: row.name, email, plan: row.plan }]);
+  } catch (err) {
+    console.error('Failed to send Skool removal alert on cancellation:', err.message);
+  }
+}
+
+/**
  * Express route handler. Must be mounted with express.raw({type: 'application/json'})
  * so the raw body is available for Stripe signature verification.
  */
@@ -144,6 +201,8 @@ async function stripeWebhookHandler(req, res) {
   try {
     if (event.type === 'checkout.session.completed') {
       await handleCheckoutCompleted(event.data.object);
+    } else if (event.type === 'customer.subscription.deleted') {
+      await handleSubscriptionDeleted(event.data.object);
     }
     // Other event types can be handled here later if needed.
 
