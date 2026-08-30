@@ -5,12 +5,13 @@
 //   3. Writes/updates the row in Google Sheets
 //   4. Gives the Discord role to the customer
 //   5. Sends the customer a welcome email with the Discord invite link
+//   6. Reminds the admin to manually send the Skool invite (no Skool API)
 
 const Stripe = require('stripe');
 const { findMemberByUsername, addRoleToUser } = require('../lib/discord');
 const { findRowByEmail, appendRow, updateRow } = require('../lib/sheets');
 const { calculateRenewalDate } = require('../lib/renewal');
-const { sendWelcomeEmail } = require('../lib/email');
+const { sendWelcomeEmail, sendSkoolInviteReminder } = require('../lib/email');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -106,6 +107,18 @@ async function handleCheckoutCompleted(session) {
     await sendWelcomeEmail(email);
   } catch (err) {
     console.error('Failed to send welcome email:', err.message);
+  }
+
+  // Remind the admin to manually send this person their Skool invite —
+  // Skool has no public API, so this step can't be automated.
+  try {
+    await sendSkoolInviteReminder({
+      name: rowData.name,
+      email,
+      plan: planLabel,
+    });
+  } catch (err) {
+    console.error('Failed to send Skool invite reminder:', err.message);
   }
 }
 
