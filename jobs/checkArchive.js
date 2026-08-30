@@ -17,8 +17,8 @@ function daysSince(dateStr) {
   return Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-async function runArchiveCheck() {
-  console.log(`[${new Date().toISOString()}] Running daily archive check...`);
+async function runArchiveCheck(thresholdDays = ARCHIVE_AFTER_DAYS) {
+  console.log(`[${new Date().toISOString()}] Running daily archive check (threshold: ${thresholdDays} days)...`);
   const rows = await getAllRows();
 
   // Sort by rowNumber descending so that deleting a row doesn't shift the
@@ -27,7 +27,7 @@ async function runArchiveCheck() {
     .filter((r) => r.status.toLowerCase() === 'expired' && r.expiredDate)
     .filter((r) => {
       const days = daysSince(r.expiredDate);
-      return days !== null && days >= ARCHIVE_AFTER_DAYS;
+      return days !== null && days >= thresholdDays;
     })
     .sort((a, b) => b.rowNumber - a.rowNumber);
 
