@@ -201,7 +201,9 @@ async function handleSubscriptionDeleted(subscription) {
  * Handles a failed renewal payment. Only acts on `subscription_cycle`
  * invoices (i.e. actual renewals) — the first invoice at signup is not a
  * renewal, and if that one fails the customer simply retries checkout
- * themselves, so no email is needed there.
+ * themselves, so no email is needed there. The tone of the email escalates
+ * based on how many attempts Stripe has already made (attempt_count) and
+ * whether this was the final attempt (next_payment_attempt is null).
  */
 async function handleInvoicePaymentFailed(invoice) {
   if (invoice.billing_reason !== 'subscription_cycle') {
@@ -216,9 +218,11 @@ async function handleInvoicePaymentFailed(invoice) {
 
   const row = await findRowByEmail(email);
   const name = row?.name || '';
+  const attemptCount = invoice.attempt_count || 1;
+  const isFinalAttempt = !invoice.next_payment_attempt;
 
   try {
-    await sendPaymentFailedEmail({ name, email });
+    await sendPaymentFailedEmail({ name, email, attemptCount, isFinalAttempt });
   } catch (err) {
     console.error('Failed to send payment failed email:', err.message);
   }
