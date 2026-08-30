@@ -15,11 +15,11 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 /**
  * Pulls the "Discord Username" custom field out of a Checkout Session.
  * This requires the Payment Link / Checkout to be configured to collect a
- * custom field with this exact key: discord_username
+ * custom field with this exact key: discordusername
  */
 function extractDiscordUsername(session) {
   const field = (session.custom_fields || []).find(
-    (f) => f.key === 'discord_username'
+    (f) => f.key === 'discordusername'
   );
   return field?.text?.value?.trim() || null;
 }
