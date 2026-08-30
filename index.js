@@ -12,6 +12,7 @@ const { checkWinBack } = require('./jobs/checkWinBack');
 const { runArchiveCheck } = require('./jobs/checkArchive');
 const { generateWeeklyReport } = require('./jobs/weeklyReport');
 const { runWeeklyAudit } = require('./jobs/weeklyAudit');
+const { runWeeklyBackup } = require('./jobs/weeklyBackup');
 const { ensureHeaderRow } = require('./lib/sheets');
 const { startDiscordGateway } = require('./lib/discordGateway');
 const { testEmailHandler } = require('./routes/testEmail');
@@ -132,8 +133,12 @@ async function main() {
     runWeeklyAudit().catch((err) =>
       console.error('Scheduled weekly audit failed:', err)
     );
+    runWeeklyBackup().catch((err) =>
+      console.error('Scheduled weekly backup failed:', err)
+    );
   });
   console.log(`Weekly report scheduled for Mondays at ${hour}:00 UTC.`);
   console.log(`Weekly audit scheduled for Mondays at ${hour}:00 UTC.`);
+  console.log(`Weekly backup scheduled for Mondays at ${hour}:00 UTC.`);
 }
 main();
