@@ -9,11 +9,13 @@ const { stripeWebhookHandler } = require('./routes/stripeWebhook');
 const { checkExpiredSubscriptions } = require('./jobs/checkExpiredSubscriptions');
 const { checkMilestones } = require('./jobs/checkMilestones');
 const { checkWinBack } = require('./jobs/checkWinBack');
+const { checkCheckIn } = require('./jobs/checkCheckIn');
 const { runArchiveCheck } = require('./jobs/checkArchive');
 const { generateWeeklyReport } = require('./jobs/weeklyReport');
 const { runWeeklyAudit } = require('./jobs/weeklyAudit');
 const { runWeeklyBackup } = require('./jobs/weeklyBackup');
 const { checkWebhookHealth } = require('./jobs/checkWebhookHealth');
+const { checkEmailDeliverability } = require('./jobs/checkEmailDeliverability');
 const { checkLeads } = require('./jobs/checkLeads');
 const { generateWeeklyLeadsReport } = require('./jobs/weeklyLeadsReport');
 const { sendLaunchAnnouncementToAllLeads } = require('./jobs/sendLaunchAnnouncement');
@@ -169,6 +171,9 @@ async function main() {
     checkWinBack().catch((err) =>
       console.error('Scheduled win-back check failed:', err)
     );
+    checkCheckIn().catch((err) =>
+      console.error('Scheduled check-in email job failed:', err)
+    );
     runArchiveCheck().catch((err) =>
       console.error('Scheduled archive check failed:', err)
     );
@@ -176,6 +181,7 @@ async function main() {
   console.log(`Daily expiration check scheduled for ${hour}:00 UTC.`);
   console.log(`Daily milestone check scheduled for ${hour}:00 UTC.`);
   console.log(`Daily win-back check scheduled for ${hour}:00 UTC.`);
+  console.log(`Daily check-in email job scheduled for ${hour}:00 UTC.`);
   console.log(`Daily archive check scheduled for ${hour}:00 UTC.`);
 
   // Schedule the weekly business summary and consistency audit — every
@@ -194,11 +200,15 @@ async function main() {
     checkWebhookHealth().catch((err) =>
       console.error('Scheduled webhook health check failed:', err)
     );
+    checkEmailDeliverability().catch((err) =>
+      console.error('Scheduled email deliverability check failed:', err)
+    );
   });
   console.log(`Weekly report scheduled for Mondays at ${hour}:00 UTC.`);
   console.log(`Weekly audit scheduled for Mondays at ${hour}:00 UTC.`);
   console.log(`Weekly backup scheduled for Mondays at ${hour}:00 UTC.`);
   console.log(`Weekly webhook health check scheduled for Mondays at ${hour}:00 UTC.`);
+  console.log(`Weekly email deliverability check scheduled for Mondays at ${hour}:00 UTC.`);
 
   // Leads sheet: check frequently (every 15 minutes) for auto-reply and
   // nurture emails, so leads get a prompt response.
