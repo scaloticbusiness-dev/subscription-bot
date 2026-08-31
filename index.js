@@ -27,6 +27,7 @@ const { testEmailHandler } = require('./routes/testEmail');
 const { markSkoolInvitedHandler } = require('./routes/markSkoolInvited');
 const { gdprExportHandler } = require('./routes/gdprExport');
 const { customerLtvHandler } = require('./routes/customerLtv');
+const { unsubscribeHandler } = require('./routes/unsubscribe');
 const REQUIRED_ENV_VARS = [
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',
@@ -95,6 +96,11 @@ async function main() {
 
   // One-click confirmation link sent inside the Skool invite reminder email.
   app.get('/mark-skool-invited', markSkoolInvitedHandler);
+
+  // One-click unsubscribe link included in marketing/promotional emails
+  // (win-back, launch announcement, nurture, check-in). No key required —
+  // low-stakes action, just an opt-out.
+  app.get('/unsubscribe', unsubscribeHandler);
 
   // GDPR data export: everything held about one email, as a downloadable
   // JSON file. Requires ?key=ADMIN_API_KEY.
