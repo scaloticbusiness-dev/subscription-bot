@@ -11,6 +11,7 @@ const { checkMilestones } = require('./jobs/checkMilestones');
 const { checkWinBack } = require('./jobs/checkWinBack');
 const { checkCheckIn } = require('./jobs/checkCheckIn');
 const { checkReengagement } = require('./jobs/checkReengagement');
+const { checkUpsellOffer } = require('./jobs/checkUpsellOffer');
 const { runArchiveCheck } = require('./jobs/checkArchive');
 const { generateWeeklyReport } = require('./jobs/weeklyReport');
 const { runWeeklyAudit } = require('./jobs/weeklyAudit');
@@ -24,7 +25,11 @@ const { sendLaunchAnnouncementToAllLeads } = require('./jobs/sendLaunchAnnouncem
 const { generateMonthlyReport } = require('./jobs/monthlyReport');
 const { runCohortAnalysis } = require('./jobs/cohortAnalysis');
 const { generateAccountantSummary } = require('./jobs/monthlyAccountantSummary');
+const { checkEventReminders } = require('./jobs/checkEventReminders');
+const { checkSopReminders } = require('./jobs/checkSopReminders');
+const { generateWinsDigest } = require('./jobs/monthlyWinsDigest');
 const { ensureHeaderRow } = require('./lib/sheets');
+const { ensureFaqSheet } = require('./lib/faq');
 const { startDiscordGateway } = require('./lib/discordGateway');
 const { testEmailHandler } = require('./routes/testEmail');
 const { markSkoolInvitedHandler } = require('./routes/markSkoolInvited');
@@ -158,6 +163,11 @@ async function main() {
     console.error('Could not verify/set the sheet header row on startup:', err.message);
   }
   try {
+    await ensureFaqSheet();
+  } catch (err) {
+    console.error('Could not verify/create the FAQ tab on startup:', err.message);
+  }
+  try {
     await startDiscordGateway();
   } catch (err) {
     console.error('Could not start Discord gateway connection:', err.message);
@@ -186,6 +196,9 @@ async function main() {
     checkReengagement().catch((err) =>
       console.error('Scheduled Discord re-engagement job failed:', err)
     );
+    checkUpsellOffer().catch((err) =>
+      console.error('Scheduled upsell offer job failed:', err)
+    );
     runArchiveCheck().catch((err) =>
       console.error('Scheduled archive check failed:', err)
     );
@@ -195,6 +208,7 @@ async function main() {
   console.log(`Daily win-back check scheduled for ${hour}:00 UTC.`);
   console.log(`Daily check-in email job scheduled for ${hour}:00 UTC.`);
   console.log(`Daily Discord re-engagement job scheduled for ${hour}:00 UTC.`);
+  console.log(`Daily upsell offer job scheduled for ${hour}:00 UTC.`);
   console.log(`Daily archive check scheduled for ${hour}:00 UTC.`);
 
   // Schedule the weekly business summary and consistency audit — every
@@ -219,6 +233,9 @@ async function main() {
     checkRefundRate().catch((err) =>
       console.error('Scheduled refund rate check failed:', err)
     );
+    checkSopReminders().catch((err) =>
+      console.error('Scheduled SOP reminder job failed:', err)
+    );
   });
   console.log(`Weekly report scheduled for Mondays at ${hour}:00 UTC.`);
   console.log(`Weekly audit scheduled for Mondays at ${hour}:00 UTC.`);
@@ -226,6 +243,15 @@ async function main() {
   console.log(`Weekly webhook health check scheduled for Mondays at ${hour}:00 UTC.`);
   console.log(`Weekly email deliverability check scheduled for Mondays at ${hour}:00 UTC.`);
   console.log(`Weekly refund rate check scheduled for Mondays at ${hour}:00 UTC.`);
+  console.log(`Weekly SOP reminder scheduled for Mondays at ${hour}:00 UTC.`);
+
+  // Live event reminders (24h/1h/10min before Q&A/webinars) — needs
+  // enough precision for the 10-minute mark, so this runs every 5 minutes
+  // rather than sharing the 15-minute leads-check cadence.
+  cron.schedule('*/5 * * * *', () => {
+    checkEventReminders().catch((err) => console.error('Scheduled event reminders check failed:', err));
+  });
+  console.log('Event reminders check scheduled every 5 minutes.');
 
   // Leads sheet: check frequently (every 15 minutes) for auto-reply and
   // nurture emails, so leads get a prompt response.
@@ -256,7 +282,10 @@ async function main() {
     generateAccountantSummary().catch((err) =>
       console.error('Scheduled accountant summary failed:', err)
     );
+    generateWinsDigest().catch((err) =>
+      console.error('Scheduled wins digest failed:', err)
+    );
   });
-  console.log(`Monthly report, cohort analysis, and accountant summary scheduled for the 1st of each month at ${hour}:00 UTC.`);
+  console.log(`Monthly report, cohort analysis, accountant summary, and wins digest scheduled for the 1st of each month at ${hour}:00 UTC.`);
 }
 main();
