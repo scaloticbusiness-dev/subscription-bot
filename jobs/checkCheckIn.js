@@ -25,7 +25,7 @@ async function checkCheckIn() {
   console.log(`[${new Date().toISOString()}] Running daily check-in email job...`);
   const rows = await getAllRows();
   const candidates = rows.filter(
-    (r) => r.status.toLowerCase() === 'active' && r.checkinSent !== 'Yes'
+    (r) => r.status.toLowerCase() === 'active' && r.checkinSent !== 'Yes' && r.unsubscribed !== 'Yes'
   );
 
   let sentCount = 0;
