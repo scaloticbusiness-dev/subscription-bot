@@ -148,7 +148,7 @@ async function checkLeads() {
     }
 
     // --- Nurture follow-up ---
-    if (!lead.nurtureSent) {
+    if (!lead.nurtureSent && lead.unsubscribed !== 'Yes') {
       try {
         const days = daysSince(lead.date);
         if (days !== null && days >= NURTURE_AFTER_DAYS) {
