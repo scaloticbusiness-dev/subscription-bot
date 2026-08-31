@@ -203,6 +203,7 @@ async function handleCheckoutCompleted(session) {
   // otherwise append a brand new row.
   const existing = await findRowByEmail(email);
   const tos = extractTosAcceptance(session);
+  const taxCountry = session.customer_details?.address?.country || existing?.taxCountry || '';
   const rowData = {
     name: session.customer_details?.name || existing?.name || '',
     email,
@@ -214,6 +215,7 @@ async function handleCheckoutCompleted(session) {
     amount: amount || existing?.amount || '',
     tosAccepted: tos.accepted || existing?.tosAccepted || '',
     tosVersion: tos.version || existing?.tosVersion || '',
+    taxCountry,
   };
 
   if (existing) {
