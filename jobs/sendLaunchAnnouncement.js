@@ -1,49 +1,41 @@
-// jobs/checkWinBack.js
-// Runs once a day. For every Expired subscriber whose subscription ended
-// about 30 days ago (and who hasn't already received a win-back email),
-// sends a "we miss you" email and marks it as sent so it's never repeated.
+// jobs/sendLaunchAnnouncement.js
+// NOT scheduled automatically. Triggered manually by visiting
+// /send-launch-announcement once the course/Skool community is actually
+// ready. Sends the "course is live!" email to every lead who hasn't
+// already received it — safe to call more than once, since it only emails
+// people not yet marked as sent (e.g. if new leads came in since the last
+// time you triggered it).
 
-const { getAllRows, updateRow } = require('../lib/sheets');
-const { sendWinBackEmail } = require('../lib/email');
+const { ensureTrackingColumns, getAllLeads, markLeadField } = require('../lib/leads');
+const { sendLaunchAnnouncementEmail } = require('../lib/email');
 
-const WIN_BACK_DAYS = 30;
+async function sendLaunchAnnouncementToAllLeads() {
+  console.log(`[${new Date().toISOString()}] Sending launch announcement to leads...`);
 
-function daysSince(dateStr) {
-  const start = new Date(dateStr);
-  if (isNaN(start.getTime())) return null;
-  start.setHours(0, 0, 0, 0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-}
+  if (!process.env.GOOGLE_LEADS_SHEET_ID) {
+    console.warn('GOOGLE_LEADS_SHEET_ID not set — nothing to do.');
+    return 0;
+  }
 
-async function checkWinBack() {
-  console.log(`[${new Date().toISOString()}] Running daily win-back check...`);
-  const rows = await getAllRows();
-  const candidates = rows.filter(
-    (r) =>
-      r.status.toLowerCase() === 'expired' &&
-      r.expiredDate &&
-      r.winBackSent !== 'Yes' &&
-      r.unsubscribed !== 'Yes'
-  );
+  const { launchCol } = await ensureTrackingColumns();
+  const leads = await getAllLeads();
 
   let sentCount = 0;
 
-  for (const row of candidates) {
-    try {
-      const days = daysSince(row.expiredDate);
-      if (days === null || days < WIN_BACK_DAYS) continue;
+  for (const lead of leads) {
+    if (!lead.email || lead.launchSent === 'Yes' || lead.unsubscribed === 'Yes') continue;
 
-      await sendWinBackEmail({ name: row.name, email: row.email });
-      await updateRow(row.rowNumber, { winBackSent: 'Yes' });
+    try {
+      await sendLaunchAnnouncementEmail({ firstName: lead.firstName, email: lead.email });
+      await markLeadField(lead.rowNumber, launchCol, 'Yes');
       sentCount += 1;
     } catch (err) {
-      console.error(`Failed to process win-back for row ${row.rowNumber} (${row.email}):`, err.message);
+      console.error(`Failed to send launch announcement for row ${lead.rowNumber} (${lead.email}):`, err.message);
     }
   }
 
-  console.log(`Win-back check complete. Sent ${sentCount} email(s).`);
+  console.log(`Launch announcement complete. Sent to ${sentCount} lead(s).`);
+  return sentCount;
 }
 
-module.exports = { checkWinBack };
+module.exports = { sendLaunchAnnouncementToAllLeads };
