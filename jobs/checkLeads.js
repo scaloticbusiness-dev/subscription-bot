@@ -64,7 +64,7 @@ async function checkLeads() {
     return;
   }
 
-  const { autoReplyCol, nurtureCol, spamCol } = await ensureTrackingColumns();
+  const { autoReplyCol, nurtureCol, spamCol, abVariantCol } = await ensureTrackingColumns();
   const phoneCol = await getColumnLetter('Τηλέφωνο');
   const leads = await getAllLeads();
 
@@ -132,8 +132,15 @@ async function checkLeads() {
     // --- Auto-reply ---
     if (isNewLead) {
       try {
-        await sendLeadAutoReply({ firstName: lead.firstName, email: lead.email });
+        // Random 50/50 split for the subject-line A/B test — assigned once
+        // per lead and recorded, so the same lead always sees the same
+        // variant even if this job somehow reprocessed them.
+        const variant = Math.random() < 0.5 ? 'A' : 'B';
+        await sendLeadAutoReply({ firstName: lead.firstName, email: lead.email, variant });
         await markLeadField(lead.rowNumber, autoReplyCol, 'Yes');
+        if (abVariantCol) {
+          await markLeadField(lead.rowNumber, abVariantCol, variant);
+        }
         autoReplyCount += 1;
       } catch (err) {
         console.error(`Failed to send auto-reply for row ${lead.rowNumber} (${lead.email}):`, err.message);
