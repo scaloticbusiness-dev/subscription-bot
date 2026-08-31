@@ -14,7 +14,7 @@ const Stripe = require('stripe');
 const { findMemberByUsername, addRoleToUser, removeRoleFromUser, sendChannelMessage } = require('../lib/discord');
 const { findRowByEmail, findRowByDiscordUsername, appendRow, updateRow } = require('../lib/sheets');
 const { calculateRenewalDate } = require('../lib/renewal');
-const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert, sendPaymentFailedEmail, sendGoodbyeEmail, sendDuplicateSignupAlert, sendRapidCycleAlert } = require('../lib/email');
+const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert, sendPaymentFailedEmail, sendGoodbyeEmail, sendDuplicateSignupAlert, sendRapidCycleAlert, sendAbandonedCheckoutEmail } = require('../lib/email');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -310,6 +310,35 @@ async function handleSubscriptionDeleted(subscription) {
 }
 
 /**
+ * Handles an abandoned checkout: the customer started paying but never
+ * completed within the session's lifetime (Stripe fires this ~24h after
+ * creation if the session wasn't completed or manually expired). Only
+ * sends a recovery email if Stripe actually captured an email address
+ * during the attempt, and only if they haven't since become an active
+ * subscriber some other way (e.g. they came back and paid via a
+ * different session before this one technically "expired").
+ */
+async function handleCheckoutExpired(session) {
+  const email = session.customer_details?.email || session.customer_email;
+  if (!email) {
+    console.log(`Checkout session ${session.id} expired with no email captured — nothing to recover.`);
+    return;
+  }
+
+  const existing = await findRowByEmail(email);
+  if (existing && existing.status.toLowerCase() === 'active') {
+    console.log(`${email} already has an active subscription — skipping abandoned checkout email.`);
+    return;
+  }
+
+  try {
+    await sendAbandonedCheckoutEmail({ name: session.customer_details?.name || '', email });
+  } catch (err) {
+    console.error('Failed to send abandoned checkout email:', err.message);
+  }
+}
+
+/**
  * Handles a failed renewal payment. Only acts on `subscription_cycle`
  * invoices (i.e. actual renewals) — the first invoice at signup is not a
  * renewal, and if that one fails the customer simply retries checkout
@@ -362,6 +391,8 @@ async function stripeWebhookHandler(req, res) {
   try {
     if (event.type === 'checkout.session.completed') {
       await handleCheckoutCompleted(event.data.object);
+    } else if (event.type === 'checkout.session.expired') {
+      await handleCheckoutExpired(event.data.object);
     } else if (event.type === 'customer.subscription.deleted') {
       await handleSubscriptionDeleted(event.data.object);
     } else if (event.type === 'invoice.payment_failed') {
