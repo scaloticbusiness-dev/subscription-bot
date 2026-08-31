@@ -43,16 +43,23 @@ async function generateWeeklyLeadsReport() {
 
   const sourceBreakdown = {};
   let convertedCount = 0;
+  const variantStats = { A: { total: 0, converted: 0 }, B: { total: 0, converted: 0 } };
 
   for (const lead of recentLeads) {
     const source = classifySource(lead.page);
     sourceBreakdown[source] = (sourceBreakdown[source] || 0) + 1;
 
+    let converted = null;
     try {
-      const converted = lead.email ? await findRowByEmail(lead.email) : null;
+      converted = lead.email ? await findRowByEmail(lead.email) : null;
       if (converted) convertedCount += 1;
     } catch (err) {
       console.error(`Failed to check conversion for ${lead.email}:`, err.message);
+    }
+
+    if (lead.abVariant === 'A' || lead.abVariant === 'B') {
+      variantStats[lead.abVariant].total += 1;
+      if (converted) variantStats[lead.abVariant].converted += 1;
     }
   }
 
@@ -60,6 +67,7 @@ async function generateWeeklyLeadsReport() {
     totalLeads: recentLeads.length,
     sourceBreakdown,
     convertedCount,
+    variantStats,
   });
 
   console.log(`Weekly leads report sent: ${recentLeads.length} leads, ${convertedCount} converted.`);
