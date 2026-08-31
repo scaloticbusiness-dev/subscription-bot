@@ -14,7 +14,7 @@ const Stripe = require('stripe');
 const { findMemberByUsername, addRoleToUser, removeRoleFromUser, sendChannelMessage } = require('../lib/discord');
 const { findRowByEmail, findRowByDiscordUsername, appendRow, updateRow } = require('../lib/sheets');
 const { calculateRenewalDate } = require('../lib/renewal');
-const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert, sendPaymentFailedEmail, sendGoodbyeEmail, sendDuplicateSignupAlert, sendRapidCycleAlert, sendAbandonedCheckoutEmail } = require('../lib/email');
+const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert, sendPaymentFailedEmail, sendGoodbyeEmail, sendDuplicateSignupAlert, sendRapidCycleAlert, sendAbandonedCheckoutEmail, sendChargebackDraftAlert } = require('../lib/email');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -339,6 +339,47 @@ async function handleCheckoutExpired(session) {
 }
 
 /**
+ * Handles a new chargeback/dispute. Pulls whatever we know about the
+ * customer (from the charge's billing details and our own sheet) and
+ * sends the admin an immediate alert with a starting-point evidence draft
+ * — never auto-submits anything to Stripe, since evidence needs a human
+ * judgment call and can only be submitted once per dispute.
+ */
+async function handleDisputeCreated(dispute) {
+  let charge = null;
+  try {
+    charge = await stripe.charges.retrieve(dispute.charge);
+  } catch (err) {
+    console.error(`Failed to retrieve charge ${dispute.charge} for dispute ${dispute.id}:`, err.message);
+  }
+
+  const email = charge?.billing_details?.email || null;
+  const row = email ? await findRowByEmail(email) : null;
+
+  const dueBy = dispute.evidence_details?.due_by
+    ? new Date(dispute.evidence_details.due_by * 1000).toISOString().slice(0, 10)
+    : null;
+
+  try {
+    await sendChargebackDraftAlert({
+      disputeId: dispute.id,
+      amount: (dispute.amount / 100).toFixed(2),
+      currency: dispute.currency.toUpperCase(),
+      reason: dispute.reason,
+      dueBy,
+      customerName: row?.name || charge?.billing_details?.name || '',
+      customerEmail: email || '',
+      signupDate: row?.date || '',
+      status: row?.status || '',
+      plan: row?.plan || '',
+      discordJoined: row?.discordJoined || '',
+    });
+  } catch (err) {
+    console.error('Failed to send chargeback draft alert:', err.message);
+  }
+}
+
+/**
  * Handles a failed renewal payment. Only acts on `subscription_cycle`
  * invoices (i.e. actual renewals) — the first invoice at signup is not a
  * renewal, and if that one fails the customer simply retries checkout
@@ -397,6 +438,8 @@ async function stripeWebhookHandler(req, res) {
       await handleSubscriptionDeleted(event.data.object);
     } else if (event.type === 'invoice.payment_failed') {
       await handleInvoicePaymentFailed(event.data.object);
+    } else if (event.type === 'charge.dispute.created') {
+      await handleDisputeCreated(event.data.object);
     }
     // Other event types can be handled here later if needed.
 
