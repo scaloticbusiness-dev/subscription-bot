@@ -14,9 +14,19 @@ const Stripe = require('stripe');
 const { findMemberByUsername, addRoleToUser, removeRoleFromUser, sendChannelMessage } = require('../lib/discord');
 const { findRowByEmail, findRowByDiscordUsername, appendRow, updateRow } = require('../lib/sheets');
 const { calculateRenewalDate } = require('../lib/renewal');
-const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert, sendPaymentFailedEmail, sendGoodbyeEmail, sendDuplicateSignupAlert, sendRapidCycleAlert, sendAbandonedCheckoutEmail, sendChargebackDraftAlert } = require('../lib/email');
+const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert, sendPaymentFailedEmail, sendGoodbyeEmail, sendDuplicateSignupAlert, sendRapidCycleAlert, sendAbandonedCheckoutEmail, sendChargebackDraftAlert, sendSaveOfferEmail } = require('../lib/email');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+function daysSince(dateStr) {
+  if (!dateStr) return null;
+  const start = new Date(dateStr);
+  if (isNaN(start.getTime())) return null;
+  start.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+}
 
 /**
  * Pulls the "Discord Username" custom field out of a Checkout Session.
@@ -28,6 +38,20 @@ function extractDiscordUsername(session) {
     (f) => f.key === 'discordusername'
   );
   return field?.text?.value?.trim() || null;
+}
+
+/**
+ * Pulls the "ToS acceptance" custom field out of a Checkout Session — a
+ * single-option required dropdown (Stripe has no true checkbox custom
+ * field type), so any non-empty answer means the customer selected it.
+ * TOS_VERSION records which version of the terms was live at signup time.
+ */
+function extractTosAcceptance(session) {
+  const field = (session.custom_fields || []).find(
+    (f) => f.key === 'tos_acceptance'
+  );
+  const accepted = field?.dropdown?.value ? 'Yes' : '';
+  return { accepted, version: accepted ? (process.env.TOS_VERSION || 'v1') : '' };
 }
 
 async function getPlanIntervalLabel(session) {
@@ -178,6 +202,7 @@ async function handleCheckoutCompleted(session) {
   // Write to Google Sheets — update existing row if this email already exists,
   // otherwise append a brand new row.
   const existing = await findRowByEmail(email);
+  const tos = extractTosAcceptance(session);
   const rowData = {
     name: session.customer_details?.name || existing?.name || '',
     email,
@@ -187,6 +212,8 @@ async function handleCheckoutCompleted(session) {
     status: 'Active',
     plan: planLabel,
     amount: amount || existing?.amount || '',
+    tosAccepted: tos.accepted || existing?.tosAccepted || '',
+    tosVersion: tos.version || existing?.tosVersion || '',
   };
 
   if (existing) {
@@ -380,6 +407,59 @@ async function handleDisputeCreated(dispute) {
 }
 
 /**
+ * Handles a subscription update, specifically watching for the moment
+ * someone schedules a cancellation via the Stripe Customer Portal
+ * (cancel_at_period_end flips from false to true). Sends a retention
+ * "save offer" email — with an additional downsell (cheaper plan) option
+ * if they've been subscribed 2+ months. Only fires once per cancellation
+ * (tracked via "Save Offer Sent"); if they later change their mind and
+ * un-cancel, the flag resets so a future cancellation can trigger it again.
+ */
+async function handleSubscriptionUpdated(subscription, previousAttributes) {
+  const customerId = subscription.customer;
+  if (!customerId) return;
+
+  const customer = await stripe.customers.retrieve(customerId);
+  const email = customer?.email;
+  if (!email) return;
+
+  const row = await findRowByEmail(email);
+  if (!row) return;
+
+  // Case 1: they just scheduled a cancellation (false -> true transition).
+  const justScheduledCancellation =
+    subscription.cancel_at_period_end === true && previousAttributes?.cancel_at_period_end === false;
+
+  if (justScheduledCancellation) {
+    if (row.saveOfferSent === 'Yes') return; // already sent for this cycle
+
+    const tenureDays = daysSince(row.date);
+    const eligibleForDownsell = tenureDays !== null && tenureDays >= 60; // ~2 months
+
+    try {
+      await sendSaveOfferEmail({ name: row.name, email, eligibleForDownsell });
+      await updateRow(row.rowNumber, { saveOfferSent: 'Yes' });
+    } catch (err) {
+      console.error('Failed to send save offer email:', err.message);
+    }
+    return;
+  }
+
+  // Case 2: they un-cancelled (true -> false) — reset the flag so a future
+  // cancellation attempt can trigger the save offer again.
+  const unCancelled =
+    subscription.cancel_at_period_end === false && previousAttributes?.cancel_at_period_end === true;
+
+  if (unCancelled && row.saveOfferSent === 'Yes') {
+    try {
+      await updateRow(row.rowNumber, { saveOfferSent: '' });
+    } catch (err) {
+      console.error('Failed to reset save offer flag:', err.message);
+    }
+  }
+}
+
+/**
  * Handles a failed renewal payment. Only acts on `subscription_cycle`
  * invoices (i.e. actual renewals) — the first invoice at signup is not a
  * renewal, and if that one fails the customer simply retries checkout
@@ -436,6 +516,8 @@ async function stripeWebhookHandler(req, res) {
       await handleCheckoutExpired(event.data.object);
     } else if (event.type === 'customer.subscription.deleted') {
       await handleSubscriptionDeleted(event.data.object);
+    } else if (event.type === 'customer.subscription.updated') {
+      await handleSubscriptionUpdated(event.data.object, event.data.previous_attributes);
     } else if (event.type === 'invoice.payment_failed') {
       await handleInvoicePaymentFailed(event.data.object);
     } else if (event.type === 'charge.dispute.created') {
