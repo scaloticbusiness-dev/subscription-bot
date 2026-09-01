@@ -17,23 +17,27 @@ function formatSnapshotLine(channel) {
   const roleBits = channel.roles
     .map((r) => `${r.roleName}: ${[r.view ? 'View' : null, r.send ? 'Send' : null].filter(Boolean).join('+') || 'κανένα'}`)
     .join(', ');
-  return `#${channel.name} — @everyone: ${everyoneBits}${roleBits ? ` | ${roleBits}` : ''}`;
+  return `#${channel.name} [${channel.category}] — @everyone: ${everyoneBits}${roleBits ? ` | ${roleBits}` : ''}`;
 }
 
 async function checkChannelPermissions() {
   console.log(`[${new Date().toISOString()}] Running channel permissions audit...`);
-  const { issues, snapshot } = await runPermissionsAudit();
+  const { issues, review, snapshot } = await runPermissionsAudit();
 
-  let report;
+  const parts = [];
   if (issues.length === 0) {
-    report = `✅ **Permissions audit** — όλα τα channels με ορισμένους κανόνες είναι σωστά ρυθμισμένα (${snapshot.length} text channels ελέγχθηκαν συνολικά).`;
+    parts.push(`✅ **Permissions audit** — όλα τα channels με ορισμένους κανόνες είναι σωστά ρυθμισμένα (${snapshot.length} text channels ελέγχθηκαν συνολικά).`);
   } else {
-    report = `⚠️ **Permissions audit** βρήκε ${issues.length} θέμα(τα):\n\n${issues.join('\n')}`;
+    parts.push(`⚠️ **Permissions audit** βρήκε ${issues.length} θέμα(τα):\n\n${issues.join('\n')}`);
   }
+  if (review.length > 0) {
+    parts.push(`\n📋 **${review.length} σημείο(α) για χειροκίνητο έλεγχο** (όχι σίγουρα λάθος, απλά ασυνήθιστα):\n\n${review.join('\n')}`);
+  }
+  const report = parts.join('\n');
 
   await sendChannelMessage(process.env.ADMIN_ALERT_CHANNEL_ID, report);
-  console.log(`Permissions audit complete. ${issues.length} issue(s).`);
-  return { issues, snapshot };
+  console.log(`Permissions audit complete. ${issues.length} issue(s), ${review.length} review flag(s).`);
+  return { issues, review, snapshot };
 }
 
 module.exports = { checkChannelPermissions, formatSnapshotLine };
