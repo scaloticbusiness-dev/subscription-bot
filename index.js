@@ -36,6 +36,9 @@ const { markSkoolInvitedHandler } = require('./routes/markSkoolInvited');
 const { gdprExportHandler } = require('./routes/gdprExport');
 const { customerLtvHandler } = require('./routes/customerLtv');
 const { unsubscribeHandler } = require('./routes/unsubscribe');
+const { broadcastTermsUpdateHandler } = require('./routes/broadcastTermsUpdate');
+const { checkUptime } = require('./jobs/checkUptime');
+const { sendIncidentAlert } = require('./lib/email');
 const REQUIRED_ENV_VARS = [
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',
@@ -54,6 +57,23 @@ function checkEnv() {
     process.exit(1);
   }
 }
+// Global safety net: if anything crashes the process outside a normal
+// try/catch, this is the clearest signal something critical broke. Sends
+// an immediate alert with a short runbook, then exits so Railway restarts
+// the process cleanly rather than leaving it in a broken state.
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+  sendIncidentAlert({ errorType: 'Uncaught Exception', message: err.message, stack: err.stack })
+    .catch((alertErr) => console.error('Failed to send incident alert:', alertErr.message))
+    .finally(() => process.exit(1));
+});
+process.on('unhandledRejection', (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  console.error('Unhandled promise rejection:', err);
+  sendIncidentAlert({ errorType: 'Unhandled Promise Rejection', message: err.message, stack: err.stack })
+    .catch((alertErr) => console.error('Failed to send incident alert:', alertErr.message))
+    .finally(() => process.exit(1));
+});
 async function main() {
   checkEnv();
   const app = express();
@@ -157,6 +177,11 @@ async function main() {
     }
   });
 
+  // MANUAL TRIGGER ONLY — call this yourself after updating the terms/
+  // privacy policy, to notify every Active subscriber. Requires
+  // ?key=ADMIN_API_KEY.
+  app.get('/broadcast-terms-update', broadcastTermsUpdateHandler);
+
   try {
     await ensureHeaderRow();
   } catch (err) {
@@ -252,6 +277,13 @@ async function main() {
     checkEventReminders().catch((err) => console.error('Scheduled event reminders check failed:', err));
   });
   console.log('Event reminders check scheduled every 5 minutes.');
+
+  // Uptime monitoring for the main site — checks every 10 minutes and
+  // only alerts on a status change (down / recovered), not repeatedly.
+  cron.schedule('*/10 * * * *', () => {
+    checkUptime().catch((err) => console.error('Scheduled uptime check failed:', err));
+  });
+  console.log('Site uptime check scheduled every 10 minutes.');
 
   // Leads sheet: check frequently (every 15 minutes) for auto-reply and
   // nurture emails, so leads get a prompt response.
