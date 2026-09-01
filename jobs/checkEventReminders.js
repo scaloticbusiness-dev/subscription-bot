@@ -10,7 +10,9 @@
 
 const { getAllEvents, markReminderSent, ensureEventsSheet } = require('../lib/events');
 const { sendEventReminderEmail } = require('../lib/email');
-const { sendChannelMessage } = require('../lib/discord');
+const { sendChannelMessage, createScheduledEvent } = require('../lib/discord');
+
+const EVENT_DEFAULT_DURATION_MS = 90 * 60 * 1000; // 90 minutes, used when creating the Discord native event
 
 const THRESHOLDS = [
   { key: 'reminder24hSent', maxMinutes: 24 * 60, label: '24 ώρες' },
@@ -41,6 +43,24 @@ async function checkEventReminders() {
 
     const minutesUntil = (eventTime - now) / 60000;
     if (minutesUntil < -60) continue; // event long past, nothing to do
+
+    // Create a native Discord Scheduled Event once, for any future event
+    // that doesn't have one yet — separate from the message reminders
+    // below, so members can see/RSVP to it in Discord's own Events tab.
+    if (!event.discordEventCreated && minutesUntil > 0) {
+      try {
+        await createScheduledEvent({
+          name: event.name,
+          description: event.description,
+          startTime: new Date(eventTime).toISOString(),
+          endTime: new Date(eventTime + EVENT_DEFAULT_DURATION_MS).toISOString(),
+          location: event.link || 'Discord',
+        });
+        await markReminderSent(event.rowNumber, 'discordEventCreated');
+      } catch (err) {
+        console.error(`Failed to create Discord scheduled event for "${event.name}":`, err.message);
+      }
+    }
 
     for (const threshold of THRESHOLDS) {
       if (event[threshold.key]) continue; // already sent
