@@ -38,6 +38,8 @@ const { customerLtvHandler } = require('./routes/customerLtv');
 const { unsubscribeHandler } = require('./routes/unsubscribe');
 const { broadcastTermsUpdateHandler } = require('./routes/broadcastTermsUpdate');
 const { checkUptime } = require('./jobs/checkUptime');
+const { permissionsAuditHandler } = require('./routes/permissionsAudit');
+const { checkChannelPermissions } = require('./jobs/checkChannelPermissions');
 const { checkMentions } = require('./jobs/checkMentions');
 const { checkEventWrapup } = require('./jobs/checkEventWrapup');
 const { sendIncidentAlert } = require('./lib/email');
@@ -184,6 +186,14 @@ async function main() {
   // ?key=ADMIN_API_KEY.
   app.get('/broadcast-terms-update', broadcastTermsUpdateHandler);
 
+  // Checks every text channel's Discord permissions against the rules in
+  // lib/permissionsAudit.js (private channels actually private, staff
+  // channels not visible to members, etc). Posts a summary to
+  // #admin-alerts and returns the full report as JSON. Requires
+  // ?key=ADMIN_API_KEY since the response includes the server's full
+  // permission layout.
+  app.get('/audit-permissions', permissionsAuditHandler);
+
   try {
     await ensureHeaderRow();
   } catch (err) {
@@ -267,6 +277,9 @@ async function main() {
     checkSopReminders().catch((err) =>
       console.error('Scheduled SOP reminder job failed:', err)
     );
+    checkChannelPermissions().catch((err) =>
+      console.error('Scheduled channel permissions audit failed:', err)
+    );
   });
   console.log(`Weekly report scheduled for Mondays at ${hour}:00 UTC.`);
   console.log(`Weekly audit scheduled for Mondays at ${hour}:00 UTC.`);
@@ -275,6 +288,7 @@ async function main() {
   console.log(`Weekly email deliverability check scheduled for Mondays at ${hour}:00 UTC.`);
   console.log(`Weekly refund rate check scheduled for Mondays at ${hour}:00 UTC.`);
   console.log(`Weekly SOP reminder scheduled for Mondays at ${hour}:00 UTC.`);
+  console.log(`Weekly channel permissions audit scheduled for Mondays at ${hour}:00 UTC.`);
 
   // Live event reminders (24h/1h/10min before Q&A/webinars) — needs
   // enough precision for the 10-minute mark, so this runs every 5 minutes
