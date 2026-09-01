@@ -38,6 +38,8 @@ const { customerLtvHandler } = require('./routes/customerLtv');
 const { unsubscribeHandler } = require('./routes/unsubscribe');
 const { broadcastTermsUpdateHandler } = require('./routes/broadcastTermsUpdate');
 const { checkUptime } = require('./jobs/checkUptime');
+const { checkMentions } = require('./jobs/checkMentions');
+const { checkEventWrapup } = require('./jobs/checkEventWrapup');
 const { sendIncidentAlert } = require('./lib/email');
 const REQUIRED_ENV_VARS = [
   'STRIPE_SECRET_KEY',
@@ -224,6 +226,9 @@ async function main() {
     checkUpsellOffer().catch((err) =>
       console.error('Scheduled upsell offer job failed:', err)
     );
+    checkMentions().catch((err) =>
+      console.error('Scheduled mentions check failed:', err)
+    );
     runArchiveCheck().catch((err) =>
       console.error('Scheduled archive check failed:', err)
     );
@@ -234,6 +239,7 @@ async function main() {
   console.log(`Daily check-in email job scheduled for ${hour}:00 UTC.`);
   console.log(`Daily Discord re-engagement job scheduled for ${hour}:00 UTC.`);
   console.log(`Daily upsell offer job scheduled for ${hour}:00 UTC.`);
+  console.log(`Daily mentions check scheduled for ${hour}:00 UTC.`);
   console.log(`Daily archive check scheduled for ${hour}:00 UTC.`);
 
   // Schedule the weekly business summary and consistency audit — every
@@ -284,6 +290,14 @@ async function main() {
     checkUptime().catch((err) => console.error('Scheduled uptime check failed:', err));
   });
   console.log('Site uptime check scheduled every 10 minutes.');
+
+  // Event wrap-up (tagging engaged attendees) — checked every 15 minutes,
+  // enough precision since it only needs to catch the ~30-minute window
+  // right after an event ends.
+  cron.schedule('*/15 * * * *', () => {
+    checkEventWrapup().catch((err) => console.error('Scheduled event wrap-up check failed:', err));
+  });
+  console.log('Event wrap-up check scheduled every 15 minutes.');
 
   // Leads sheet: check frequently (every 15 minutes) for auto-reply and
   // nurture emails, so leads get a prompt response.
