@@ -204,6 +204,13 @@ async function handleCheckoutCompleted(session) {
   const existing = await findRowByEmail(email);
   const tos = extractTosAcceptance(session);
   const taxCountry = session.customer_details?.address?.country || existing?.taxCountry || '';
+  // The single ToS checkbox at checkout covers both terms and privacy
+  // policy consent (its label mentions both), so whenever it's accepted
+  // we record whatever PRIVACY_POLICY_VERSION is currently set to — lets
+  // the admin bump this independently if only the privacy policy changes.
+  const privacyPolicyVersion = tos.accepted
+    ? (process.env.PRIVACY_POLICY_VERSION || 'v1')
+    : existing?.privacyPolicyVersion || '';
   const rowData = {
     name: session.customer_details?.name || existing?.name || '',
     email,
@@ -216,6 +223,7 @@ async function handleCheckoutCompleted(session) {
     tosAccepted: tos.accepted || existing?.tosAccepted || '',
     tosVersion: tos.version || existing?.tosVersion || '',
     taxCountry,
+    privacyPolicyVersion,
   };
 
   if (existing) {
