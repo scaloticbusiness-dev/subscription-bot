@@ -12,11 +12,13 @@ async function permissionsAuditHandler(req, res) {
   if (!requireAdminKey(req, res)) return;
 
   try {
-    const { issues, snapshot } = await checkChannelPermissions();
+    const { issues, review, snapshot } = await checkChannelPermissions();
     res.json({
       ok: true,
       issueCount: issues.length,
       issues,
+      reviewCount: review.length,
+      review,
       snapshot: snapshot.map(formatSnapshotLine),
     });
   } catch (err) {
