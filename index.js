@@ -14,6 +14,7 @@ const { checkReengagement } = require('./jobs/checkReengagement');
 const { checkUpsellOffer } = require('./jobs/checkUpsellOffer');
 const { runArchiveCheck } = require('./jobs/checkArchive');
 const { checkDisputeDeadlines } = require('./jobs/checkDisputeDeadlines');
+const { checkToolRenewals } = require('./jobs/checkToolRenewals');
 const { generateWeeklyReport } = require('./jobs/weeklyReport');
 const { runWeeklyAudit } = require('./jobs/weeklyAudit');
 const { runWeeklyBackup } = require('./jobs/weeklyBackup');
@@ -32,6 +33,7 @@ const { generateWinsDigest } = require('./jobs/monthlyWinsDigest');
 const { ensureHeaderRow } = require('./lib/sheets');
 const { ensureFaqSheet } = require('./lib/faq');
 const { ensureExitFeedbackSheet } = require('./lib/exitFeedback');
+const { ensureToolRenewalsSheet } = require('./lib/toolRenewals');
 const { startDiscordGateway } = require('./lib/discordGateway');
 const { testEmailHandler } = require('./routes/testEmail');
 const { markSkoolInvitedHandler } = require('./routes/markSkoolInvited');
@@ -227,6 +229,11 @@ async function main() {
           console.error('Could not verify/create the Exit Feedback tab on startup:', err.message);
     }
     try {
+          await ensureToolRenewalsSheet();
+    } catch (err) {
+          console.error('Could not verify/create the Tool Renewals tab on startup:', err.message);
+    }
+    try {
           await startDiscordGateway();
     } catch (err) {
           console.error('Could not start Discord gateway connection:', err.message);
@@ -267,6 +274,9 @@ async function main() {
         checkDisputeDeadlines().catch((err) =>
                 console.error('Scheduled dispute deadline check failed:', err)
                                           );
+        checkToolRenewals().catch((err) =>
+                console.error('Scheduled tool renewal check failed:', err)
+                                      );
   });
     console.log(`Daily expiration check scheduled for ${hour}:00 UTC.`);
     console.log(`Daily milestone check scheduled for ${hour}:00 UTC.`);
@@ -277,6 +287,7 @@ async function main() {
     console.log(`Daily mentions check scheduled for ${hour}:00 UTC.`);
     console.log(`Daily archive check scheduled for ${hour}:00 UTC.`);
     console.log(`Daily dispute deadline check scheduled for ${hour}:00 UTC.`);
+    console.log(`Daily tool renewal check scheduled for ${hour}:00 UTC.`);
 
   // Schedule the weekly business summary and consistency audit — every
   // Monday at the same hour.
