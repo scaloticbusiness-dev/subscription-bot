@@ -6,15 +6,16 @@
 //   4. Gives the Discord role to the customer
 //   5. Sends the customer a welcome email with the Discord invite link
 //   6. Reminds the admin to manually send the Skool invite (no Skool API)
-// On an immediate cancellation, it removes the Discord role and marks the
-// sheet row as "Expired" right away, instead of waiting for the next day's
-// scheduled check.
-
+// On a cancellation, it does NOT remove the Discord role or touch the sheet
+// row — the customer already paid through their Renewal Date, so access
+// continues until then either way. jobs/checkExpiredSubscriptions.js is the
+// only place that removes the role and marks a row "Expired", once Renewal
+// Date actually passes.
 const Stripe = require('stripe');
-const { findMemberByUsername, addRoleToUser, removeRoleFromUser, sendChannelMessage } = require('../lib/discord');
+const { findMemberByUsername, addRoleToUser, sendChannelMessage } = require('../lib/discord');
 const { findRowByEmail, findRowByDiscordUsername, appendRow, updateRow } = require('../lib/sheets');
 const { calculateRenewalDate } = require('../lib/renewal');
-const { sendWelcomeEmail, sendSkoolInviteReminder, sendSkoolRemovalAlert, sendPaymentFailedEmail, sendGoodbyeEmail, sendDuplicateSignupAlert, sendRapidCycleAlert, sendAbandonedCheckoutEmail, sendChargebackDraftAlert, sendSaveOfferEmail } = require('../lib/email');
+const { sendWelcomeEmail, sendSkoolInviteReminder, sendPaymentFailedEmail, sendDuplicateSignupAlert, sendRapidCycleAlert, sendAbandonedCheckoutEmail, sendChargebackDraftAlert, sendSaveOfferEmail } = require('../lib/email');
 const { findUnrewardedReferralByReferredUsername, markRewardApplied } = require('../lib/referrals');
 const { applyReferralReward } = require('../lib/referralRewards');
 const { logExitFeedback } = require('../lib/exitFeedback');
@@ -317,13 +318,20 @@ try {
 }
 }
 
-/**
-* Handles an immediate subscription cancellation (as opposed to a natural
-* expiration caught by the daily job). Removes the Discord role and marks
-* the sheet row "Expired" right away, so the sheet reflects reality without
-* waiting for tomorrow's scheduled check — and the row turns red immediately
-* via the existing conditional formatting on the Status column.
-*/
+// Handles a subscription cancellation. Stripe fires `customer.subscription.
+// deleted` both for the normal case (a `cancel_at_period_end` subscription
+// quietly running out, right at the period end) and for a true immediate
+// cancellation (e.g. cancelled right away from the Stripe Dashboard, before
+// the paid period is over) — this handler can't always tell which one it
+// is, and it doesn't need to: either way, the customer already paid through
+// row.renewalDate, so access should last until then either way.
+//
+// So this deliberately does NOT remove the Discord role or touch the sheet
+// row — that stays the exclusive job of jobs/checkExpiredSubscriptions.js,
+// which removes the role and marks the row "Expired" once Renewal Date
+// actually passes. This handler only records the cancellation for the
+// admin (why they left, if Stripe captured a reason) and gives an early
+// heads-up in Discord — nothing here changes what the customer can access.
 async function handleSubscriptionDeleted(subscription) {
   const customerId = subscription.customer;
   if (!customerId) {
@@ -331,65 +339,27 @@ async function handleSubscriptionDeleted(subscription) {
     return;
   }
 
-const customer = await stripe.customers.retrieve(customerId);
+  const customer = await stripe.customers.retrieve(customerId);
   const email = customer?.email;
   if (!email) {
     console.error(`Could not find an email for customer ${customerId}, skipping.`);
     return;
   }
 
-const row = await findRowByEmail(email);
+  const row = await findRowByEmail(email);
   if (!row) {
     console.warn(`No sheet row found for cancelled customer ${email}.`);
     return;
   }
 
-if (row.status.toLowerCase() !== 'active') {
-  console.log(`Row for ${email} is already ${row.status}, nothing to do.`);
-  return;
-}
-
-try {
-  if (row.discordUsername) {
-    const member = await findMemberByUsername(row.discordUsername);
-    if (member?.user?.id) {
-      await removeRoleFromUser(member.user.id);
-      console.log(`Removed role from ${row.discordUsername} (immediate cancellation)`);
-
-    // Also remove the VIP role in case they had it (yearly plan) —
-    // harmless no-op if they never had it.
-    if (process.env.DISCORD_VIP_ROLE_ID) {
-      await removeRoleFromUser(member.user.id, process.env.DISCORD_VIP_ROLE_ID);
-    }
-    }
+  if (row.status.toLowerCase() !== 'active') {
+    console.log(`Row for ${email} is already ${row.status}, nothing to do.`);
+    return;
   }
-} catch (err) {
-  console.error('Discord role removal failed on cancellation:', err.message);
-}
 
-await updateRow(row.rowNumber, {
-  status: 'Expired',
-  expiredDate: new Date().toISOString().slice(0, 10),
-});
-  console.log(`Marked row ${row.rowNumber} (${email}) as Expired (immediate cancellation)`);
+  console.log(`${email} cancelled — leaving role/row untouched, access continues until Renewal Date (${row.renewalDate || 'unknown'}). jobs/checkExpiredSubscriptions.js will expire it then.`);
 
-try {
-  await sendSkoolRemovalAlert([{ name: row.name, email, plan: row.plan }]);
-} catch (err) {
-  console.error('Failed to send Skool removal alert on cancellation:', err.message);
-}
-
-try {
-  await sendGoodbyeEmail({ name: row.name, email });
-} catch (err) {
-  console.error('Failed to send goodbye email on cancellation:', err.message);
-}
-
-// Capture why they left, if Stripe's Customer Portal "cancellation
-// reason" feature is enabled (Settings > Customer Portal > Cancellations
-// in the Stripe Dashboard) — cancellation_details is present but empty
-// otherwise, so this is a safe no-op until/unless that's turned on.
-const cancellationReasonCode = subscription.cancellation_details?.reason || '';
+  const cancellationReasonCode = subscription.cancellation_details?.reason || '';
   const cancellationFeedback = subscription.cancellation_details?.feedback || '';
   const cancellationReasonLabel = CANCELLATION_REASON_LABELS[cancellationReasonCode] || cancellationReasonCode;
   try {
@@ -403,15 +373,10 @@ const cancellationReasonCode = subscription.cancellation_details?.reason || '';
     console.error('Failed to log exit feedback on cancellation:', err.message);
   }
 
-// Also post to the private admin Discord channel for immediate visibility.
-const reasonLine = cancellationReasonLabel ? `\nΛόγος: ${cancellationReasonLabel}` : '';
+  const reasonLine = cancellationReasonLabel ? `\nΛόγος: ${cancellationReasonLabel}` : '';
+  const renewalDateLine = row.renewalDate ? `\nΘα διατηρήσει πρόσβαση μέχρι τις ${row.renewalDate} — ο ρόλος θα αφαιρεθεί αυτόματα τότε.` : '';
   try {
-    await sendChannelMessage(
-      process.env.ADMIN_ALERT_CHANNEL_ID,
-      `🔴 **Ακύρωση συνδρομής**
-      ${row.name || '(no name)'} — ${email}
-      Ο Discord ρόλος αφαιρέθηκε.${reasonLine}`
-      );
+    await sendChannelMessage(process.env.ADMIN_ALERT_CHANNEL_ID, `🟡 **Ακύρωση συνδρομής**\n${row.name || '(no name)'} — ${email}${renewalDateLine}${reasonLine}`);
   } catch (err) {
     console.error('Failed to send admin Discord alert for cancellation:', err.message);
   }
