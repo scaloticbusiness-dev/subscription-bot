@@ -6,7 +6,7 @@
 // sheet so the same milestone is never sent twice.
 
 const { getAllRows, updateRow } = require('../lib/sheets');
-const { sendMilestoneEmail } = require('../lib/email');
+const { sendMilestoneEmail, sendTestimonialRequestEmail } = require('../lib/email');
 
 // Ordered from smallest to largest. `days` is the minimum number of days
 // since signup required to have reached this milestone.
@@ -55,6 +55,9 @@ async function checkMilestones() {
       if (row.lastMilestone === reached.label) continue; // already sent this one
 
       await sendMilestoneEmail({ name: row.name, email: row.email, milestoneLabel: reached.label });
+      if (reached.label === '3 μήνες') {
+        await sendTestimonialRequestEmail({ name: row.name, email: row.email });
+      }
       await updateRow(row.rowNumber, { lastMilestone: reached.label });
       sentCount += 1;
     } catch (err) {
