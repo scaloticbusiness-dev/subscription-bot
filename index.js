@@ -15,6 +15,7 @@ const { checkUpsellOffer } = require('./jobs/checkUpsellOffer');
 const { runArchiveCheck } = require('./jobs/checkArchive');
 const { checkDisputeDeadlines } = require('./jobs/checkDisputeDeadlines');
 const { checkToolRenewals } = require('./jobs/checkToolRenewals');
+const { checkTicketSLA } = require('./jobs/checkTicketSLA');
 const { generateWeeklyReport } = require('./jobs/weeklyReport');
 const { runWeeklyAudit } = require('./jobs/weeklyAudit');
 const { runWeeklyBackup } = require('./jobs/weeklyBackup');
@@ -356,6 +357,14 @@ async function main() {
         checkLeads().catch((err) => console.error('Scheduled leads check failed:', err));
   });
     console.log('Leads check scheduled every 15 minutes.');
+
+  // Support ticket SLA monitoring — checks every 30 minutes so a breach is
+  // caught well within the hour, without hammering the Sheets API like a
+  // tighter interval would.
+  cron.schedule('*/30 * * * *', () => {
+        checkTicketSLA().catch((err) => console.error('Scheduled ticket SLA check failed:', err));
+  });
+    console.log('Ticket SLA check scheduled every 30 minutes.');
 
   // Weekly leads report — bundled with the other Monday jobs.
   cron.schedule(weeklyCronExpression, () => {
