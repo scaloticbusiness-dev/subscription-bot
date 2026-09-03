@@ -5,6 +5,7 @@
 require('dotenv').config();
 const express = require('express');
 const cron = require('node-cron');
+const path = require('path');
 const { stripeWebhookHandler } = require('./routes/stripeWebhook');
 const { checkExpiredSubscriptions } = require('./jobs/checkExpiredSubscriptions');
 const { checkMilestones } = require('./jobs/checkMilestones');
@@ -97,6 +98,10 @@ async function main() {
       );
     // Everything else can use normal JSON parsing.
   app.use(express.json());
+// Serves brand assets (the logo used in the email signature) from
+// /assets — a stable HTTPS URL under our own domain rather than
+// hotlinking to an external host.
+app.use('/assets', express.static(path.join(__dirname, 'public')));
     app.get('/', (req, res) => {
           res.send('Subscription bot is running.');
     });
