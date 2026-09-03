@@ -278,6 +278,9 @@ async function main() {
         checkToolRenewals().catch((err) =>
                 console.error('Scheduled tool renewal check failed:', err)
                                       );
+            checkChannelPermissions().catch((err) =>
+                    console.error('Scheduled channel permissions audit failed:', err)
+            );
   });
     console.log(`Daily expiration check scheduled for ${hour}:00 UTC.`);
     console.log(`Daily milestone check scheduled for ${hour}:00 UTC.`);
@@ -289,6 +292,7 @@ async function main() {
     console.log(`Daily archive check scheduled for ${hour}:00 UTC.`);
     console.log(`Daily dispute deadline check scheduled for ${hour}:00 UTC.`);
     console.log(`Daily tool renewal check scheduled for ${hour}:00 UTC.`);
+      console.log(`Daily channel permissions audit scheduled for ${hour}:00 UTC.`);
 
   // Schedule the weekly business summary and consistency audit — every
   // Monday at the same hour.
@@ -315,9 +319,6 @@ async function main() {
         checkSopReminders().catch((err) =>
                 console.error('Scheduled SOP reminder job failed:', err)
                                       );
-        checkChannelPermissions().catch((err) =>
-                console.error('Scheduled channel permissions audit failed:', err)
-                                            );
   });
     console.log(`Weekly report scheduled for Mondays at ${hour}:00 UTC.`);
     console.log(`Weekly audit scheduled for Mondays at ${hour}:00 UTC.`);
@@ -326,7 +327,6 @@ async function main() {
     console.log(`Weekly email deliverability check scheduled for Mondays at ${hour}:00 UTC.`);
     console.log(`Weekly refund rate check scheduled for Mondays at ${hour}:00 UTC.`);
     console.log(`Weekly SOP reminder scheduled for Mondays at ${hour}:00 UTC.`);
-    console.log(`Weekly channel permissions audit scheduled for Mondays at ${hour}:00 UTC.`);
 
   // Live event reminders (24h/1h/10min before Q&A/webinars) — needs
   // enough precision for the 10-minute mark, so this runs every 5 minutes
