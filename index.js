@@ -37,7 +37,7 @@ const { ensureFaqSheet } = require('./lib/faq');
 const { ensureExitFeedbackSheet } = require('./lib/exitFeedback');
 const { ensureToolRenewalsSheet } = require('./lib/toolRenewals');
 const { startDiscordGateway } = require('./lib/discordGateway');
-const { testEmailHandler } = require('./routes/testEmail');
+const { requireAdminKey } = require('./lib/adminAuth');
 const { markSkoolInvitedHandler } = require('./routes/markSkoolInvited');
 const { gdprExportHandler } = require('./routes/gdprExport');
 const { gdprDeleteHandler } = require('./routes/gdprDelete');
@@ -111,6 +111,7 @@ app.use('/assets', express.static(path.join(__dirname, 'public')));
     // Optional: trigger the expiration check manually for testing.
   // Visit this URL once after deploying to confirm everything is wired up.
   app.get('/run-expiration-check', async (req, res) => {
+        if (!requireAdminKey(req, res)) return;
         try {
                 await checkExpiredSubscriptions();
                 res.json({ ok: true });
@@ -124,6 +125,7 @@ app.use('/assets', express.static(path.join(__dirname, 'public')));
   // overriding the 90-day threshold via ?days=0 to force-archive Expired
   // rows regardless of age. Remove this route once confirmed working.
   app.get('/run-archive-check', async (req, res) => {
+        if (!requireAdminKey(req, res)) return;
         try {
                 const days = req.query.days !== undefined ? Number(req.query.days) : undefined;
                 await runArchiveCheck(days);
@@ -133,10 +135,6 @@ app.use('/assets', express.static(path.join(__dirname, 'public')));
                 res.status(500).json({ ok: false, error: err.message });
         }
   });
-
-  // TEMPORARY: test the welcome email without a real Stripe payment.
-  // Visit /test-email?to=your@email.com — remove this route once confirmed working.
-  app.get('/test-email', testEmailHandler);
 
   // One-click confirmation link sent inside the Skool invite reminder email.
   app.get('/mark-skool-invited', markSkoolInvitedHandler);
@@ -170,6 +168,7 @@ app.use('/assets', express.static(path.join(__dirname, 'public')));
   // Manual trigger for the cohort retention analysis, useful for testing
   // without waiting for the monthly schedule.
   app.get('/run-cohort-analysis', async (req, res) => {
+        if (!requireAdminKey(req, res)) return;
         try {
                 const table = await runCohortAnalysis();
                 res.json({ ok: true, cohorts: table.length });
@@ -182,6 +181,7 @@ app.use('/assets', express.static(path.join(__dirname, 'public')));
   // Manual trigger for the monthly report, useful for testing without
   // waiting for the 1st of the month.
   app.get('/run-monthly-report', async (req, res) => {
+        if (!requireAdminKey(req, res)) return;
         try {
                 await generateMonthlyReport();
                 res.json({ ok: true });
@@ -197,6 +197,7 @@ app.use('/assets', express.static(path.join(__dirname, 'public')));
   // new leads came in after the first send) — it only emails whoever is
   // still unmarked.
   app.get('/send-launch-announcement', async (req, res) => {
+        if (!requireAdminKey(req, res)) return;
         try {
                 const sent = await sendLaunchAnnouncementToAllLeads();
                 res.json({ ok: true, sent });

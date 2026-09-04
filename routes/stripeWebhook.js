@@ -35,6 +35,24 @@ const CANCELLATION_REASON_LABELS = {
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+// Stripe delivers each event at least once, and will redeliver if we are
+// slow to answer, if a deploy restarts us mid-delivery, or on its own
+// retry schedule. Every handler below has effects the customer can see —
+// a welcome email, a Discord role, an admin alert — so a redelivery must
+// not replay them. Remember the ids we have already accepted and drop
+// anything seen before. The list is capped so it cannot grow unbounded.
+const processedEventIds = new Set();
+const PROCESSED_EVENT_LIMIT = 1000;
+
+function isDuplicateEvent(eventId) {
+  if (processedEventIds.has(eventId)) return true;
+  processedEventIds.add(eventId);
+  if (processedEventIds.size > PROCESSED_EVENT_LIMIT) {
+    processedEventIds.delete(processedEventIds.values().next().value);
+  }
+  return false;
+}
+
 function daysSince(dateStr) {
   if (!dateStr) return null;
   const start = new Date(dateStr);
@@ -555,6 +573,18 @@ try {
   return res.status(400).send(`Webhook Error: ${err.message}`);
 }
 
+if (isDuplicateEvent(event.id)) {
+  console.log(`Ignored duplicate delivery of ${event.type} (${event.id}).`);
+  return res.json({ received: true, duplicate: true });
+}
+
+// Acknowledge before doing the work. A checkout runs several calls in
+// sequence — Stripe line items, Google Sheets, Discord, two emails — and
+// can take longer than Stripe waits for an answer. Answering first means
+// a slow run can no longer cause a redelivery, and therefore no longer a
+// second welcome email.
+res.json({ received: true });
+
 try {
   if (event.type === 'checkout.session.completed') {
     await handleCheckoutCompleted(event.data.object);
@@ -570,13 +600,9 @@ try {
     await handleDisputeCreated(event.data.object);
   }
   // Other event types can be handled here later if needed.
-
-  res.json({ received: true });
 } catch (err) {
+  // The response has already gone out, so this can only be logged.
   console.error('Error handling webhook event:', err);
-  // Respond 200 anyway so Stripe doesn't endlessly retry a broken handler —
-  // the error is logged for us to fix.
-  res.status(200).json({ received: true, error: err.message });
 }
 }
 
