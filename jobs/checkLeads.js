@@ -13,10 +13,36 @@
 
 const { ensureTrackingColumns, getAllLeads, markLeadField, getColumnLetter } = require('../lib/leads');
 const { findRowByEmail } = require('../lib/sheets');
-const { sendLeadAutoReply, sendLeadNurtureEmail, sendDuplicatePhoneAlert, sendSpamLeadsAlert } = require('../lib/email');
+const { sendLeadAutoReply, sendLeadNurtureEmail, sendDuplicatePhoneAlert, sendSpamLeadsAlert, sendNewLeadAlert, describeLeadSource } = require('../lib/email');
+const { sendChannelMessage } = require('../lib/discord');
 const { evaluateLead } = require('../lib/spam');
 
 const NURTURE_AFTER_DAYS = 4;
+
+// A few leads write several paragraphs into the obstacle field. Discord
+// rejects anything over 2000 characters, and a wall of text in a feed is
+// unreadable anyway — the point of the card is to let the owner decide in
+// two seconds whether this one is worth a personal reply.
+const MAX_OBSTACLE_IN_CARD = 300;
+
+function buildLeadCard(lead) {
+  const fullName = [lead.firstName, lead.lastName].filter(Boolean).join(' ') || '(χωρίς όνομα)';
+  const obstacle = (lead.obstacle || '').trim();
+  const short =
+    obstacle.length > MAX_OBSTACLE_IN_CARD
+      ? `${obstacle.slice(0, MAX_OBSTACLE_IN_CARD).trimEnd()}…`
+      : obstacle;
+
+  return [
+    `🟢 **Νέο lead** — ${fullName}`,
+    `${lead.email || '(χωρίς email)'}${lead.phone ? ` · ${lead.phone}` : ''}`,
+    `Κεφάλαιο: ${lead.budget || '—'} · Κανάλι: ${lead.channelStatus || '—'}`,
+    `Προέλευση: ${describeLeadSource(lead.page)}`,
+    short ? `> ${short.replace(/\n+/g, ' ')}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
 
 function daysSince(dateStr) {
   if (!dateStr) return null;
@@ -142,6 +168,26 @@ async function checkLeads() {
           await markLeadField(lead.rowNumber, abVariantCol, variant);
         }
         autoReplyCount += 1;
+
+        // Tell the owner. Each alert is isolated: a broken Discord channel
+        // id or a mail hiccup must never stop the lead from being marked
+        // as replied-to, or the next run would email them a second time.
+        try {
+          await sendNewLeadAlert(lead);
+        } catch (err) {
+          console.error(`Failed to send new-lead email alert for row ${lead.rowNumber}:`, err.message);
+        }
+
+        try {
+          const channelId = process.env.LEADS_CHANNEL_ID || process.env.ADMIN_ALERT_CHANNEL_ID;
+          if (channelId) {
+            await sendChannelMessage(channelId, buildLeadCard(lead));
+          } else {
+            console.warn('Neither LEADS_CHANNEL_ID nor ADMIN_ALERT_CHANNEL_ID is set — skipping Discord lead card.');
+          }
+        } catch (err) {
+          console.error(`Failed to post new-lead Discord card for row ${lead.rowNumber}:`, err.message);
+        }
       } catch (err) {
         console.error(`Failed to send auto-reply for row ${lead.rowNumber} (${lead.email}):`, err.message);
       }
