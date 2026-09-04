@@ -10,6 +10,7 @@ const { stripeWebhookHandler } = require('./routes/stripeWebhook');
 const { checkExpiredSubscriptions } = require('./jobs/checkExpiredSubscriptions');
 const { checkMilestones } = require('./jobs/checkMilestones');
 const { checkWinBack } = require('./jobs/checkWinBack');
+const { checkRenewalReminders } = require('./jobs/checkRenewalReminders');
 const { checkCheckIn } = require('./jobs/checkCheckIn');
 const { checkReengagement } = require('./jobs/checkReengagement');
 const { checkUpsellOffer } = require('./jobs/checkUpsellOffer');
@@ -263,6 +264,9 @@ app.use('/assets', express.static(path.join(__dirname, 'public')));
         checkWinBack().catch((err) =>
                 console.error('Scheduled win-back check failed:', err)
                                  );
+        checkRenewalReminders().catch((err) =>
+                console.error('Scheduled renewal reminder check failed:', err)
+                                          );
         checkCheckIn().catch((err) =>
                 console.error('Scheduled check-in email job failed:', err)
                                  );
@@ -291,6 +295,7 @@ app.use('/assets', express.static(path.join(__dirname, 'public')));
     console.log(`Daily expiration check scheduled for ${hour}:00 UTC.`);
     console.log(`Daily milestone check scheduled for ${hour}:00 UTC.`);
     console.log(`Daily win-back check scheduled for ${hour}:00 UTC.`);
+    console.log(`Daily renewal reminder check scheduled for ${hour}:00 UTC.`);
     console.log(`Daily check-in email job scheduled for ${hour}:00 UTC.`);
     console.log(`Daily Discord re-engagement job scheduled for ${hour}:00 UTC.`);
     console.log(`Daily upsell offer job scheduled for ${hour}:00 UTC.`);
